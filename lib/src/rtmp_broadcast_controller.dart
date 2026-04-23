@@ -5,10 +5,7 @@ import 'channels/method_channel_bridge.dart';
 import 'models/rtmp_broadcaster_exception.dart';
 import 'models/rtmp_status.dart';
 import 'models/sponsor_overlay.dart';
-
-enum CameraFacing { front, back }
-
-enum VideoOrientation { portrait, landscape }
+import 'models/stream_config.dart';
 
 class RtmpBroadcastController {
   RtmpBroadcastController()
@@ -18,8 +15,8 @@ class RtmpBroadcastController {
   final MethodChannelBridge _method;
   final EventChannelBridge _event;
 
-  VideoOrientation _orientation = VideoOrientation.portrait;
-  VideoOrientation get orientation => _orientation;
+  StreamConfig? _config;
+  StreamConfig get config => _config!;
 
   Stream<RtmpStatus> get statusStream => _event.statusStream;
 
@@ -27,7 +24,7 @@ class RtmpBroadcastController {
     required String rtmpUrl,
     required String rtmpKey,
     required List<SponsorOverlay> sponsors,
-    VideoOrientation orientation = VideoOrientation.portrait,
+    required StreamConfig config,
   }) async {
     if (rtmpUrl.isEmpty) {
       throw const RtmpBroadcasterException('INVALID_URL', 'rtmpUrl must not be empty');
@@ -39,9 +36,9 @@ class RtmpBroadcastController {
       await _method.configure({
         'rtmpEndpoint': '$rtmpUrl/$rtmpKey',
         'sponsors': sponsors.map((s) => s.toMap()).toList(),
-        'orientation': orientation.name,
+        ...config.toMap(),
       });
-      _orientation = orientation;
+      _config = config;
     } on PlatformException catch (e) {
       throw RtmpBroadcasterException(e.code, e.message ?? '');
     }

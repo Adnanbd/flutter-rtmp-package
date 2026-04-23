@@ -82,10 +82,22 @@ class FlutterRtmpBroadcasterPlugin :
         val rawSponsors = call.argument<List<Map<String, Any>>>("sponsors") ?: emptyList()
         val sponsors = rawSponsors.map { SponsorConfig.fromMap(it) }
 
+        val width = call.argument<Int>("width") ?: 1280
+        val height = call.argument<Int>("height") ?: 720
+        val fps = call.argument<Int>("fps") ?: 30
+        val videoBitrate = call.argument<Int>("videoBitrate") ?: 2_500_000
+        val keyframeIntervalSeconds = call.argument<Int>("keyframeIntervalSeconds") ?: 2
+        val orientation = call.argument<String>("orientation") ?: "landscape"
+        val initialFacing = call.argument<String>("initialFacing") ?: "back"
+
         cameraStreamManager?.release()
         try {
             cameraStreamManager = CameraStreamManager(ctx).also { manager ->
-                manager.configure(rtmpEndpoint, sponsors)
+                manager.configure(
+                    rtmpEndpoint, sponsors,
+                    width, height, fps, videoBitrate, keyframeIntervalSeconds,
+                    orientation, initialFacing
+                )
                 eventSink?.let { manager.setSink(it) }
             }
             result.success(null)

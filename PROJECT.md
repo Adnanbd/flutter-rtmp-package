@@ -198,6 +198,79 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
 - [x] `stopStream()` calls `cancelReconnect()` → removes pending `Runnable` from handler queue
 - [ ] Verify on device with server taken offline mid-stream
 
+### M4.8 — YouTube-Compliant Encoder Config, Orientation & Camera Pickers
+
+**Goal:** Let the user pick resolution (720p/1080p), orientation (portrait/landscape), and initial camera (front/back) **before going live**; apply YouTube-compliant encoder settings (H.264, 2 s keyframe, CBR, BT.709, 30 fps, true portrait dims when vertical); expose camera-flip + mute **during live**. Resolution and orientation are locked once streaming starts (YouTube drops the session on mid-stream dim changes). Plan: `~/.claude/plans/claude-plugin-marketplace-add-snazzy-lecun.md`.
+
+**Mid-live behavior matrix**
+
+| Action | Live-safe? | Notes |
+|---|---|---|
+| Switch camera (front/back) | Yes | `Camera2Source.switchCamera()` is hot-swap safe |
+| Toggle mute | Yes | `MicrophoneSource.mute()/unMute()` |
+| Change resolution | No | `prepareVideo` requires stream stopped; disabled in UI |
+| Change orientation | No | Same |
+| Change bitrate | Out of scope | `setVideoBitrateOnFly(int)` exists, defer |
+
+#### M4.8.1 — Create `StreamConfig` model (Dart)
+- [ ] New file `lib/src/models/stream_config.dart` with `VideoResolution {hd720, fhd1080}`, `VideoOrientation {portrait, landscape}`, `CameraFacing {front, back}` enums
+- [ ] `StreamConfig` class with fields: `width`, `height`, `fps`, `videoBitrate`, `keyframeIntervalSeconds`, `orientation`, `initialFacing`
+- [ ] Factory constructors: `youtube720Landscape` (1280×720 @ 2.5 Mbps), `youtube1080Landscape` (1920×1080 @ 4.5 Mbps), `youtube720Portrait` (720×1280 @ 2.5 Mbps), `youtube1080Portrait` (1080×1920 @ 4.5 Mbps) — all 30 fps, 2 s keyframe
+- [ ] `toMap()` serializer
+- [ ] Re-export `StreamConfig` + enums from `lib/flutter_rtmp_broadcaster.dart`
+
+#### M4.8.2 — Refactor `RtmpBroadcastController.configure`
+- [ ] Delete local `CameraFacing` / `VideoOrientation` enum declarations (now in `stream_config.dart`)
+- [ ] `configure()` signature: `{required String rtmpUrl, required String rtmpKey, required List<SponsorOverlay> sponsors, required StreamConfig config}`
+- [ ] Build MethodChannel payload by spreading `config.toMap()` alongside `rtmpEndpoint` + `sponsors`
+- [ ] Store `_config`, expose `StreamConfig get config`
+
+#### M4.8.3 — Android plugin parses new configure keys
+- [ ] `FlutterRtmpBroadcasterPlugin.handleConfigure` parses `width`, `height`, `fps`, `videoBitrate`, `keyframeIntervalSeconds`, `orientation`, `initialFacing`
+- [ ] Forwards them to `manager.configure(...)` with new signature
+
+#### M4.8.4 — `CameraStreamManager` accepts dynamic encoder config
+- [ ] Remove `STREAM_WIDTH` / `STREAM_HEIGHT` / `STREAM_FPS` / `VIDEO_BITRATE` constants
+- [ ] Change `overlayFilterManager` from `val` to `var` (rebuilt at configure time with real encoded dims)
+- [ ] New `configure(rtmpEndpoint, sponsors, width, height, fps, videoBitrate, keyframeIntervalSeconds, orientation, initialFacing)` signature
+- [ ] Compute `(encW, encH)` so **portrait is truly W<H** (no rotation swap)
+- [ ] Call `genericStream.prepareVideo(encW, encH, videoBitrate, fps, keyframeIntervalSeconds, 0 /* rotation */)`
+
+#### M4.8.5 — Kill rotation-swap, encode true portrait frames
+- [ ] Replace `setOrientation(CameraHelper.getCameraOrientation(context))` (line 70) with `setOrientation(0)`
+- [ ] Remove the `setOrientation(getSensorOrientation(...))` call inside `switchCamera()` (line 106) so a mid-stream flip does not re-introduce the swap
+- [ ] Rebuild `overlayFilterManager = OverlayFilterManager(encW, encH)` before `initLayers`
+
+#### M4.8.6 — BT.709 color space + honor `initialFacing`
+- [ ] After `prepareVideo` succeeds, call `genericStream.getVideoEncoder()?.forceBt709Color(true)`
+- [ ] After `initLayers`, call `switchCamera(initialFacing)` so user's pre-live camera choice applies before the first encoded frame
+
+#### M4.8.7 — Example app pre-live pickers
+- [ ] Add state in `_StreamPageState`: `_res`, `_orient`, `_initialFacing` (plus `_currentFacing`, `_muted`)
+- [ ] Three `SegmentedButton` rows in pre-configure block: Resolution (720p/1080p), Orientation (Landscape/Portrait), Initial Camera (Back/Front)
+- [ ] Pickers disabled while `configured == true`
+- [ ] `_configure()` builds `StreamConfig` by switching on `(_res, _orient)` → one of the four factory constructors
+
+#### M4.8.8 — Example app live controls
+- [ ] Post-configure row: `[Flip camera] [Mute/Unmute] [Start/Stop]`
+- [ ] Flip toggles `_currentFacing` and calls `controller.switchCamera(...)`
+- [ ] Mute calls `controller.setAudioMuted(_muted = !_muted)`
+- [ ] Confirm no `disconnected` event on `statusStream` during flip
+
+#### M4.8.9 — Dart unit tests
+- [ ] New `test/stream_config_test.dart`: factory outputs match YouTube-preset dims/bitrate
+- [ ] Update controller test with `MockMethodCallHandler` to verify `configure` sends expected payload `Map`
+
+#### M4.8.10 — Manual smoke test against YouTube Studio
+- [ ] 720p landscape back camera → YouTube Live Control Room reports `1280×720 @ 30 fps`, `~2500 kbps`, `Keyframe 2.0 s`, `H.264`, no B-frame warning
+- [ ] 1080p landscape → `1920×1080 @ ~4500 kbps`
+- [ ] 720p portrait → YouTube mobile player shows full-screen vertical (not letterboxed rotated-landscape)
+- [ ] 1080p portrait → same check at higher res
+- [ ] Flip camera mid-stream → no `disconnected` event
+- [ ] Mute mid-stream → audio drops, video unaffected
+- [ ] Resolution/orientation pickers greyed out while streaming
+- [ ] Scoreband still overlays correctly across all four presets
+
 ---
 
 ## M5 — iOS: Camera + Preview

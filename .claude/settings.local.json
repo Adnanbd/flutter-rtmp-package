@@ -70,7 +70,12 @@
       "Bash(unzip -o classes.jar 'com/pedro/encoder/input/gl/Sprite.class' -d extracted2/)",
       "Bash(unzip -o library_aar/classes.jar 'com/pedro/library/base/StreamBase.class' -d extracted3/)",
       "Bash(unzip -o classes.jar 'com/pedro/encoder/input/sources/OrientationConfig.class' -d extracted_orient/)",
-      "Bash(unzip -o classes.jar 'com/pedro/encoder/input/video/CameraHelper.class' -d extracted_ch/)"
+      "Bash(unzip -o classes.jar 'com/pedro/encoder/input/video/CameraHelper.class' -d extracted_ch/)",
+      "Bash(unzip -l /Users/agl-mac/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/library/2.7.2/29c63816d9a815c3572ae9ece86b7986406200f/library-2.7.2.aar)",
+      "Bash(unzip -p /Users/agl-mac/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/library/2.7.2/29c63816d9a815c3572ae9ece86b7986406200f/library-2.7.2.aar classes.jar)",
+      "Bash(unzip -l /tmp/lib.jar)",
+      "Bash(unzip -p /Users/agl-mac/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/encoder/2.7.2/d65f4ec137a0e0abfb5e0ccdd863fe33e1abcf2e/encoder-2.7.2.aar classes.jar)",
+      "Bash(unzip -l /tmp/enc.jar)"
     ]
   }
 }
