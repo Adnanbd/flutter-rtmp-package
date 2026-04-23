@@ -34,6 +34,7 @@ void main() {
         rtmpUrl: 'rtmp://live.example.com/app',
         rtmpKey: 'my-key',
         sponsors: [],
+        config: StreamConfig.youtube720Landscape,
       );
       expect(calls.length, 1);
       expect(calls.first.method, 'configure');
@@ -44,7 +45,7 @@ void main() {
     test('throws on empty url', () async {
       final ctrl = RtmpBroadcastController();
       expect(
-        () => ctrl.configure(rtmpUrl: '', rtmpKey: 'key', sponsors: []),
+        () => ctrl.configure(rtmpUrl: '', rtmpKey: 'key', sponsors: [], config: StreamConfig.youtube720Landscape),
         throwsA(isA<RtmpBroadcasterException>()),
       );
     });
@@ -53,7 +54,7 @@ void main() {
       final ctrl = RtmpBroadcastController();
       expect(
         () => ctrl.configure(
-            rtmpUrl: 'rtmp://live.example.com/app', rtmpKey: '', sponsors: []),
+            rtmpUrl: 'rtmp://live.example.com/app', rtmpKey: '', sponsors: [], config: StreamConfig.youtube720Landscape),
         throwsA(isA<RtmpBroadcasterException>()),
       );
     });
@@ -70,6 +71,7 @@ void main() {
             position: const OverlayPosition(x: 0.1, y: 0.2, width: 0.3, height: 0.05),
           ),
         ],
+        config: StreamConfig.youtube720Landscape,
       );
       final args = calls.first.arguments as Map;
       final sponsors = args['sponsors'] as List;

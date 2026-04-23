@@ -14,7 +14,7 @@ class ExampleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RTMP Broadcaster Test',
+      title: 'RTMP Broadcaster',
       theme: ThemeData(colorSchemeSeed: Colors.blue, useMaterial3: true),
       home: const _PermissionGatePage(),
     );
@@ -70,30 +70,139 @@ class _PermissionGatePageState extends State<_PermissionGatePage> {
         ),
       );
     }
-    return const _StreamPage();
+    return const _RtmpConfigScreen();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Main streaming page
+// RTMP Config Screen
 // ---------------------------------------------------------------------------
 
-class _StreamPage extends StatefulWidget {
-  const _StreamPage();
+class _RtmpConfigScreen extends StatefulWidget {
+  const _RtmpConfigScreen();
 
   @override
-  State<_StreamPage> createState() => _StreamPageState();
+  State<_RtmpConfigScreen> createState() => _RtmpConfigScreenState();
 }
 
-class _StreamPageState extends State<_StreamPage> {
+class _RtmpConfigScreenState extends State<_RtmpConfigScreen> {
   final _urlCtrl = TextEditingController(text: 'rtmp://a.rtmp.youtube.com/live2');
   final _keyCtrl = TextEditingController(text: '0rqt-kuhd-qkah-vqbk-1j7y');
-  final _controller = RtmpBroadcastController();
-  final _scorebandKey = GlobalKey();
+  bool _connecting = false;
 
-  bool _configured = false;
+  Future<void> _connect() async {
+    final url = _urlCtrl.text.trim();
+    final key = _keyCtrl.text.trim();
+    if (url.isEmpty || key.isEmpty) {
+      _showSnack('Enter RTMP URL and stream key');
+      return;
+    }
+    setState(() => _connecting = true);
+    try {
+      final controller = RtmpBroadcastController();
+      final config = StreamConfig.defaultConfig;
+      await controller.initPreview(config: config);
+      await controller.configure(rtmpUrl: url, rtmpKey: key, sponsors: [], config: config);
+      await controller.setAppOrientation(config.orientation);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => _CameraScreen(controller: controller)),
+      );
+    } on RtmpBroadcasterException catch (e) {
+      _showSnack('Failed: ${e.code} — ${e.message}');
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    _keyCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('RTMP Configuration')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Enter your RTMP details to go live',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              controller: _urlCtrl,
+              decoration: const InputDecoration(
+                labelText: 'RTMP URL',
+                hintText: 'rtmp://a.rtmp.youtube.com/live2',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _keyCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Stream Key',
+                hintText: 'your-stream-key',
+                border: OutlineInputBorder(),
+              ),
+              obscureText: true,
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              height: 50,
+              child: FilledButton(
+                onPressed: _connecting ? null : _connect,
+                child: _connecting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Go Live'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Camera Preview Screen (Full Screen)
+// ---------------------------------------------------------------------------
+
+class _CameraScreen extends StatefulWidget {
+  const _CameraScreen({required this.controller});
+
+  final RtmpBroadcastController controller;
+
+  @override
+  State<_CameraScreen> createState() => _CameraScreenState();
+}
+
+class _CameraScreenState extends State<_CameraScreen> {
+  final _scoreBandKey = GlobalKey();
+  VideoResolution _selectedRes = VideoResolution.hd720;
+  VideoOrientation _selectedOrient = VideoOrientation.portrait;
+  CameraFacing _currentFacing = CameraFacing.back;
+  bool _muted = false;
   bool _streaming = false;
-  String _statusText = 'Not configured';
   int _score = 0;
   Timer? _scoreTimer;
   StreamSubscription<RtmpStatus>? _statusSub;
@@ -101,62 +210,115 @@ class _StreamPageState extends State<_StreamPage> {
   @override
   void initState() {
     super.initState();
-    _statusSub = _controller.statusStream.listen(_onStatus);
+    _statusSub = widget.controller.statusStream.listen(_onStatus);
   }
 
   void _onStatus(RtmpStatus s) {
     setState(() {
       switch (s.type) {
         case RtmpStatusType.connected:
-          _statusText = 'Connected';
           _streaming = true;
         case RtmpStatusType.disconnected:
-          _statusText = 'Disconnected: ${s.reason ?? ''}';
           _streaming = false;
         case RtmpStatusType.error:
-          _statusText = 'Error ${s.errorCode}: ${s.errorMessage}';
+          _showSnack('Error: ${s.errorCode}');
         case RtmpStatusType.bitrate:
-          _statusText = 'Streaming • ${s.kbps} kbps';
         case RtmpStatusType.reconnecting:
-          _statusText = 'Reconnecting (attempt ${s.reconnectAttempt})';
+          break;
       }
     });
   }
 
-  Future<void> _configure() async {
-    final url = _urlCtrl.text.trim();
-    final key = _keyCtrl.text.trim();
-    if (url.isEmpty || key.isEmpty) {
-      _showSnack('Enter RTMP URL and stream key');
-      return;
-    }
-    try {
-      await _controller.configure(rtmpUrl: url, rtmpKey: key, sponsors: []);
-      setState(() {
-        _configured = true;
-        _statusText = 'Ready — tap Start Stream';
-      });
-    } on RtmpBroadcasterException catch (e) {
-      _showSnack('Configure failed: ${e.code} — ${e.message}');
-    }
-  }
-
-  Future<void> _startStream() async {
-    try {
-      await _controller.startStream();
+  Future<void> _toggleStream() async {
+    if (_streaming) {
+      _scoreTimer?.cancel();
+      await widget.controller.stopStream();
+    } else {
+      await widget.controller.startStream();
       _startScorebandTimer();
-    } on RtmpBroadcasterException catch (e) {
-      _showSnack('Start failed: ${e.code} — ${e.message}');
     }
   }
 
-  Future<void> _stopStream() async {
-    _scoreTimer?.cancel();
-    await _controller.stopStream();
-    setState(() {
-      _streaming = false;
-      _statusText = 'Stopped';
-    });
+  Future<void> _flipCamera() async {
+    final newFacing = _currentFacing == CameraFacing.back ? CameraFacing.front : CameraFacing.back;
+    await widget.controller.switchCamera(facing: newFacing);
+    setState(() => _currentFacing = newFacing);
+  }
+
+  Future<void> _toggleMute() async {
+    _muted = !_muted;
+    await widget.controller.setAudioMuted(_muted);
+  }
+
+  Future<void> _pushScoreband() async {
+    try {
+      final boundary = _scoreBandKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      await widget.controller.updateScoreband(bytes);
+    } catch (_) {}
+  }
+
+  void _showSettingsModal() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const SizedBox(width: 80, child: Text('Resolution')),
+                Expanded(
+                  child: DropdownButton<VideoResolution>(
+                    value: _selectedRes,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: VideoResolution.hd720, child: Text('720p')),
+                      DropdownMenuItem(value: VideoResolution.fhd1080, child: Text('1080p')),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _selectedRes = v!);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const SizedBox(width: 80, child: Text('Orientation')),
+                Expanded(
+                  child: DropdownButton<VideoOrientation>(
+                    value: _selectedOrient,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: VideoOrientation.landscape, child: Text('Landscape')),
+                      DropdownMenuItem(value: VideoOrientation.portrait, child: Text('Portrait')),
+                    ],
+                    onChanged: (v) async {
+                      if (v == null) return;
+                      await widget.controller.setAppOrientation(v);
+                      setState(() => _selectedOrient = v);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
   }
 
   void _startScorebandTimer() {
@@ -165,22 +327,6 @@ class _StreamPageState extends State<_StreamPage> {
       setState(() => _score++);
       _pushScoreband();
     });
-    _pushScoreband();
-  }
-
-  //rtmpUrl = rtmp://a.rtmp.youtube.com/live2, rtmpKey = dgz0-58hb-vvzv-a033-3j8a
-  Future<void> _pushScoreband() async {
-    final ctx = _scorebandKey.currentContext;
-    if (ctx == null) return;
-    final boundary = ctx.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return;
-    try {
-      await WidgetsBinding.instance.endOfFrame;
-      final img = await boundary.toImage(pixelRatio: 2.0);
-      final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-      if (bytes == null) return;
-      await _controller.updateScoreband(bytes.buffer.asUint8List());
-    } catch (_) {}
   }
 
   void _showSnack(String msg) {
@@ -192,174 +338,89 @@ class _StreamPageState extends State<_StreamPage> {
   void dispose() {
     _scoreTimer?.cancel();
     _statusSub?.cancel();
-    _controller.dispose();
-    _urlCtrl.dispose();
-    _keyCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('RTMP Broadcaster'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(24),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              _statusText,
-              style: TextStyle(fontSize: 12, color: _streaming ? Colors.green.shade700 : Colors.grey.shade700),
-            ),
-          ),
-        ),
-      ),
-      body: Column(
+      body: Stack(
         children: [
-          // Camera preview (only shown after configure so PlatformView is
-          // created after GenericStream is prepared)
-          Expanded(
-            child: _configured
-                ? RtmpBroadcastWidget(controller: _controller)
-                : const ColoredBox(
-                    color: Colors.black,
-                    child: Center(child: Icon(Icons.videocam_off, size: 64, color: Colors.white38)),
+          // Camera preview (full screen)
+          const Positioned.fill(
+            child: RtmpBroadcastWidget(),
+          ),
+
+          // Settings icon (top-right, hidden when streaming)
+          if (!_streaming)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: FloatingActionButton.small(
+                heroTag: 'settings',
+                onPressed: _showSettingsModal,
+                child: const Icon(Icons.settings),
+              ),
+            ),
+
+          // Scoreband overlay (visible when streaming)
+          if (_streaming)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              left: 16,
+              right: 16,
+              child: RepaintBoundary(
+                key: _scoreBandKey,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-          ),
-
-          // Scoreband — visible for testing; RepaintBoundary enables capture
-          RepaintBoundary(
-            key: _scorebandKey,
-            child: _ScoreBand(score: _score),
-          ),
-
-          // Config / stream controls
-          _ControlPanel(
-            configured: _configured,
-            streaming: _streaming,
-            urlCtrl: _urlCtrl,
-            keyCtrl: _keyCtrl,
-            onConfigure: _configure,
-            onStart: _startStream,
-            onStop: _stopStream,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Scoreband widget — demo only; renders score text for native overlay capture
-// ---------------------------------------------------------------------------
-
-class _ScoreBand extends StatelessWidget {
-  const _ScoreBand({required this.score});
-  final int score;
-
-  @override
-  Widget build(BuildContext context) {
-    final runs = score * 7;
-    final wickets = score % 10;
-    final overs = (score * 0.3).toStringAsFixed(1);
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ColoredBox(
-        color: const Color(0xDD003366),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'TEAM A  $runs/$wickets  •  $overs ov  •  TEAM B 0/0',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Control panel — config form or stream buttons
-// ---------------------------------------------------------------------------
-
-class _ControlPanel extends StatelessWidget {
-  const _ControlPanel({
-    required this.configured,
-    required this.streaming,
-    required this.urlCtrl,
-    required this.keyCtrl,
-    required this.onConfigure,
-    required this.onStart,
-    required this.onStop,
-  });
-
-  final bool configured;
-  final bool streaming;
-  final TextEditingController urlCtrl;
-  final TextEditingController keyCtrl;
-  final VoidCallback onConfigure;
-  final VoidCallback onStart;
-  final VoidCallback onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.grey.shade100,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!configured) ...[
-            TextField(
-              controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: 'RTMP URL (e.g. rtmp://a.rtmp.youtube.com/live2)',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: keyCtrl,
-              decoration: const InputDecoration(labelText: 'Stream Key', isDense: true, border: OutlineInputBorder()),
-              obscureText: true,
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(onPressed: onConfigure, child: const Text('Configure & Start Preview')),
-            ),
-          ] else ...[
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: streaming ? null : onStart,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
-                    child: const Text('Start Stream'),
+                  child: Text(
+                    'SCORE: $_score',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: streaming ? onStop : null,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-                    child: const Text('Stop Stream'),
-                  ),
+              ),
+            ),
+
+          // Three floating buttons (bottom)
+          Positioned(
+            bottom: 32,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Flip Camera
+                FloatingActionButton(
+                  heroTag: 'flip',
+                  onPressed: _flipCamera,
+                  child: const Icon(Icons.flip_camera_android),
+                ),
+                // Start/Stop Stream
+                FloatingActionButton(
+                  heroTag: 'stream',
+                  backgroundColor: _streaming ? Colors.red : Colors.green,
+                  onPressed: _toggleStream,
+                  child: Icon(_streaming ? Icons.stop : Icons.play_arrow),
+                ),
+                // Mute/Unmute
+                FloatingActionButton(
+                  heroTag: 'mute',
+                  backgroundColor: _muted ? Colors.orange : Colors.blue,
+                  onPressed: _toggleMute,
+                  child: Icon(_muted ? Icons.mic_off : Icons.mic),
                 ),
               ],
             ),
-          ],
+          ),
         ],
       ),
     );

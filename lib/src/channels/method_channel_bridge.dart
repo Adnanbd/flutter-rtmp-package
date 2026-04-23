@@ -5,6 +5,9 @@ class MethodChannelBridge {
 
   final MethodChannel _channel = const MethodChannel(channelName);
 
+  Future<void> initPreview(Map<String, dynamic> args) =>
+      _channel.invokeMethod('initPreview', args);
+
   Future<void> configure(Map<String, dynamic> args) =>
       _channel.invokeMethod('configure', args);
 
@@ -23,4 +26,7 @@ class MethodChannelBridge {
 
   Future<void> setAudioMute(bool muted) =>
       _channel.invokeMethod('setAudioMute', {'muted': muted});
+
+  Future<void> setAppOrientation(String orientation) =>
+      _channel.invokeMethod('setAppOrientation', {'orientation': orientation});
 }

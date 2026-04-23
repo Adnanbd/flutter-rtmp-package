@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.SurfaceTexture
 import android.view.TextureView
 import android.view.View
+import android.view.ViewGroup
 import io.flutter.plugin.platform.PlatformView
 
 class CameraPreviewView(
@@ -13,6 +14,10 @@ class CameraPreviewView(
 
     private val textureView = TextureView(context).also {
         it.surfaceTextureListener = this
+        it.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
     }
 
     // SurfaceTexture is not available at construction time; wait for the callback.

@@ -20,6 +20,17 @@ class RtmpBroadcastController {
 
   Stream<RtmpStatus> get statusStream => _event.statusStream;
 
+  Future<void> initPreview({StreamConfig? config}) async {
+    final cfg = config ?? StreamConfig.defaultConfig;
+    try {
+      await _method.initPreview({
+        ...cfg.toMap(),
+      });
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
   Future<void> configure({
     required String rtmpUrl,
     required String rtmpKey,
@@ -89,6 +100,14 @@ class RtmpBroadcastController {
     try {
       await _method.updateSponsors(
           sponsors.map((s) => s.toMap()).toList());
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> setAppOrientation(VideoOrientation orientation) async {
+    try {
+      await _method.setAppOrientation(orientation.name);
     } on PlatformException catch (e) {
       throw RtmpBroadcasterException(e.code, e.message ?? '');
     }

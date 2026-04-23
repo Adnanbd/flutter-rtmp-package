@@ -58,6 +58,7 @@ class FlutterRtmpBroadcasterPlugin :
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
+            "initPreview" -> handleInitPreview(call, result)
             "configure" -> handleConfigure(call, result)
             "startStream" -> handleStartStream(result)
             "stopStream" -> handleStopStream(result)
@@ -65,7 +66,46 @@ class FlutterRtmpBroadcasterPlugin :
             "updateSponsors" -> result.notImplemented()
             "switchCamera" -> handleSwitchCamera(call, result)
             "setAudioMute" -> handleSetAudioMute(call, result)
+            "setAppOrientation" -> handleSetAppOrientation(call, result)
             else -> result.notImplemented()
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun handleSetAppOrientation(call: MethodCall, result: Result) {
+        val orientation = call.argument<String>("orientation") ?: "portrait"
+        cameraStreamManager?.setAppOrientation(orientation)
+        result.success(null)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun handleInitPreview(call: MethodCall, result: Result) {
+        val ctx = context ?: run {
+            result.error("NO_CONTEXT", "Plugin context not available", null)
+            return
+        }
+
+        val width = call.argument<Int>("width") ?: 1280
+        val height = call.argument<Int>("height") ?: 720
+        val fps = call.argument<Int>("fps") ?: 30
+        val initialFacing = call.argument<String>("initialFacing") ?: "back"
+
+        val act = activity
+        if (act == null) {
+            result.error("NO_ACTIVITY", "Activity not available", null)
+            return
+        }
+
+        cameraStreamManager?.release()
+        try {
+            cameraStreamManager = CameraStreamManager(ctx, act).also { manager ->
+                manager.initPreviewOnly(width, height, fps, initialFacing)
+                eventSink?.let { manager.setSink(it) }
+            }
+            result.success(null)
+        } catch (e: Exception) {
+            cameraStreamManager = null
+            result.error("INIT_PREVIEW_ERROR", e.message ?: "Init preview failed", null)
         }
     }
 
@@ -90,9 +130,15 @@ class FlutterRtmpBroadcasterPlugin :
         val orientation = call.argument<String>("orientation") ?: "landscape"
         val initialFacing = call.argument<String>("initialFacing") ?: "back"
 
+        val act = activity
+        if (act == null) {
+            result.error("NO_ACTIVITY", "Activity not available", null)
+            return
+        }
+
         cameraStreamManager?.release()
         try {
-            cameraStreamManager = CameraStreamManager(ctx).also { manager ->
+            cameraStreamManager = CameraStreamManager(ctx, act).also { manager ->
                 manager.configure(
                     rtmpEndpoint, sponsors,
                     width, height, fps, videoBitrate, keyframeIntervalSeconds,

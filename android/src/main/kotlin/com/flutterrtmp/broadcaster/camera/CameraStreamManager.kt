@@ -1,8 +1,7 @@
 package com.flutterrtmp.broadcaster.camera
 
 import android.content.Context
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
+import android.content.pm.ActivityInfo
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -16,14 +15,15 @@ import com.pedro.encoder.input.video.CameraHelper
 import com.pedro.library.generic.GenericStream
 import io.flutter.plugin.common.EventChannel
 
-class CameraStreamManager(private val context: Context) {
+class CameraStreamManager(private val context: Context, private val activity: android.app.Activity) {
 
     companion object {
         private const val TAG = "CameraStreamManager"
-        private const val STREAM_WIDTH = 720
-        private const val STREAM_HEIGHT = 1280
-        private const val STREAM_FPS = 30
-        private const val VIDEO_BITRATE = 2_500_000
+        private const val DEFAULT_PREVIEW_WIDTH = 1280
+        private const val DEFAULT_PREVIEW_HEIGHT = 720
+        private const val DEFAULT_FPS = 30
+        private const val DEFAULT_BITRATE = 2_500_000
+        private const val DEFAULT_KEYFRAME = 2
         private const val AUDIO_SAMPLE_RATE = 44100
         private const val AUDIO_BITRATE = 128_000
         private const val MAX_RECONNECT_ATTEMPTS = 3
@@ -36,45 +36,98 @@ class CameraStreamManager(private val context: Context) {
     )
 
     val genericStream: GenericStream by lazy { GenericStream(context, connectChecker) }
-    private val overlayFilterManager = OverlayFilterManager(STREAM_WIDTH, STREAM_HEIGHT)
+    private var overlayFilterManager: OverlayFilterManager? = null
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectRunnable: Runnable? = null
 
+    private var encWidth = 0
+    private var encHeight = 0
     var rtmpEndpoint: String = ""
         private set
-    private var isPrepared = false
+    private var isPreviewReady = false
+    private var isConfigured = false
     private var intentionalStop = false
     private var reconnectAttempt = 0
 
-    val isStreaming: Boolean get() = isPrepared && genericStream.isStreaming
+    val isStreaming: Boolean get() = isConfigured && genericStream.isStreaming
 
     fun setSink(sink: EventChannel.EventSink?) {
         connectChecker.sink = sink
     }
 
-    fun configure(rtmpEndpoint: String, sponsors: List<SponsorConfig>) {
-        if (isPrepared) return
-        this.rtmpEndpoint = rtmpEndpoint
+    fun initPreviewOnly(width: Int, height: Int, fps: Int, initialFacing: String) {
+        if (isPreviewReady) return
 
-        // RootEncoder signature: prepareVideo(width, height, bitrate, fps, ...).
-        // Passing fps in the bitrate slot silently collapses the encoder to ~30 bps.
-        val videoOk = genericStream.prepareVideo(STREAM_WIDTH, STREAM_HEIGHT, VIDEO_BITRATE, STREAM_FPS)
+        encWidth = width
+        encHeight = height
+
+        val videoOk = genericStream.prepareVideo(width, height, DEFAULT_BITRATE, fps, DEFAULT_KEYFRAME, 0)
         val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
         if (!videoOk || !audioOk) {
-            Log.e(TAG, "prepare failed: video=$videoOk audio=$audioOk")
-            throw IllegalStateException("Encoder prepare failed (video=$videoOk, audio=$audioOk)")
+            Log.e(TAG, "initPreviewOnly prepare failed: video=$videoOk audio=$audioOk")
+            throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
 
-        // Correct for camera sensor orientation so the encoded portrait frames
-        // are upright in the 720×1280 encoder (back camera sensor is typically 90°).
-        genericStream.setOrientation(CameraHelper.getCameraOrientation(context))
+        genericStream.setOrientation(0)
 
-        overlayFilterManager.initLayers(genericStream, sponsors)
-        isPrepared = true
+        overlayFilterManager = OverlayFilterManager(width, height)
+        overlayFilterManager?.initLayers(genericStream, emptyList())
+
+        switchCamera(initialFacing)
+
+        isPreviewReady = true
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun configure(
+        rtmpEndpoint: String,
+        sponsors: List<SponsorConfig>,
+        width: Int,
+        height: Int,
+        fps: Int,
+        videoBitrate: Int,
+        keyframeIntervalSeconds: Int,
+        orientation: String,
+        initialFacing: String
+    ) {
+        this.rtmpEndpoint = rtmpEndpoint
+        this.encWidth = width
+        this.encHeight = height
+
+        if (!isPreviewReady || width != encWidth || height != encHeight) {
+            genericStream.release()
+            isPreviewReady = false
+
+            val videoOk = genericStream.prepareVideo(width, height, videoBitrate, fps, keyframeIntervalSeconds, 0)
+            val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+            if (!videoOk || !audioOk) {
+                Log.e(TAG, "configure prepare failed: video=$videoOk audio=$audioOk")
+                throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
+            }
+
+            genericStream.setOrientation(0)
+
+            overlayFilterManager = OverlayFilterManager(width, height)
+            overlayFilterManager?.initLayers(genericStream, sponsors)
+
+            switchCamera(initialFacing)
+
+            isPreviewReady = true
+        } else {
+            overlayFilterManager?.initLayers(genericStream, sponsors)
+            switchCamera(initialFacing)
+        }
+
+        isConfigured = true
     }
 
     fun bindPreview(textureView: TextureView) {
-        if (isPrepared) genericStream.startPreview(textureView)
+        if (isPreviewReady) genericStream.startPreview(textureView)
+    }
+
+    fun rebindPreview(textureView: TextureView) {
+        unbindPreview()
+        if (isPreviewReady) genericStream.startPreview(textureView)
     }
 
     fun unbindPreview() {
@@ -94,7 +147,7 @@ class CameraStreamManager(private val context: Context) {
     }
 
     fun updateScoreband(bytes: ByteArray) {
-        overlayFilterManager.updateScoreband(bytes)
+        overlayFilterManager?.updateScoreband(bytes)
     }
 
     fun switchCamera(facing: String) {
@@ -103,22 +156,7 @@ class CameraStreamManager(private val context: Context) {
         val currentFront = source.getCameraFacing() == CameraHelper.Facing.FRONT
         if (desiredFront != currentFront) {
             source.switchCamera()
-            genericStream.setOrientation(getSensorOrientation(desiredFront))
         }
-    }
-
-    private fun getSensorOrientation(front: Boolean): Int {
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val lensFacing = if (front) CameraCharacteristics.LENS_FACING_FRONT
-                         else CameraCharacteristics.LENS_FACING_BACK
-        return try {
-            manager.cameraIdList.firstNotNullOfOrNull { id ->
-                val chars = manager.getCameraCharacteristics(id)
-                if (chars.get(CameraCharacteristics.LENS_FACING) == lensFacing)
-                    chars.get(CameraCharacteristics.SENSOR_ORIENTATION)
-                else null
-            } ?: 90
-        } catch (e: Exception) { 90 }
     }
 
     fun setAudioMuted(muted: Boolean) {
@@ -126,14 +164,28 @@ class CameraStreamManager(private val context: Context) {
         if (muted) source.mute() else source.unMute()
     }
 
+    fun setAppOrientation(orientation: String) {
+        val orient = when (orientation) {
+            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        try {
+            activity?.requestedOrientation = orient
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set orientation: $e")
+        }
+    }
+
     fun release() {
         intentionalStop = true
         cancelReconnect()
-        if (isPrepared) overlayFilterManager.release(genericStream)
+        if (isPreviewReady) overlayFilterManager?.release(genericStream)
         if (genericStream.isOnPreview) genericStream.stopPreview()
         if (genericStream.isStreaming) genericStream.stopStream()
         genericStream.release()
-        isPrepared = false
+        overlayFilterManager = null
+        isPreviewReady = false
+        isConfigured = false
     }
 
     private fun scheduleReconnect() {

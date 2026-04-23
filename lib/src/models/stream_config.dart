@@ -63,6 +63,8 @@ class StreamConfig {
     initialFacing: CameraFacing.back,
   );
 
+  static const StreamConfig defaultConfig = youtube720Portrait;
+
   Map<String, dynamic> toMap() => {
         'width': width,
         'height': height,
