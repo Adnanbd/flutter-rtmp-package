@@ -1,0 +1,101 @@
+import 'package:flutter/services.dart';
+
+import 'channels/event_channel_bridge.dart';
+import 'channels/method_channel_bridge.dart';
+import 'models/rtmp_broadcaster_exception.dart';
+import 'models/rtmp_status.dart';
+import 'models/sponsor_overlay.dart';
+
+enum CameraFacing { front, back }
+
+enum VideoOrientation { portrait, landscape }
+
+class RtmpBroadcastController {
+  RtmpBroadcastController()
+      : _method = MethodChannelBridge(),
+        _event = EventChannelBridge();
+
+  final MethodChannelBridge _method;
+  final EventChannelBridge _event;
+
+  VideoOrientation _orientation = VideoOrientation.portrait;
+  VideoOrientation get orientation => _orientation;
+
+  Stream<RtmpStatus> get statusStream => _event.statusStream;
+
+  Future<void> configure({
+    required String rtmpUrl,
+    required String rtmpKey,
+    required List<SponsorOverlay> sponsors,
+    VideoOrientation orientation = VideoOrientation.portrait,
+  }) async {
+    if (rtmpUrl.isEmpty) {
+      throw const RtmpBroadcasterException('INVALID_URL', 'rtmpUrl must not be empty');
+    }
+    if (rtmpKey.isEmpty) {
+      throw const RtmpBroadcasterException('INVALID_KEY', 'rtmpKey must not be empty');
+    }
+    try {
+      await _method.configure({
+        'rtmpEndpoint': '$rtmpUrl/$rtmpKey',
+        'sponsors': sponsors.map((s) => s.toMap()).toList(),
+        'orientation': orientation.name,
+      });
+      _orientation = orientation;
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> updateScoreband(Uint8List pngBytes) async {
+    try {
+      await _method.updateOverlay('scoreband', pngBytes);
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> startStream() async {
+    try {
+      await _method.startStream();
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> stopStream() async {
+    try {
+      await _method.stopStream();
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> switchCamera({required CameraFacing facing}) async {
+    try {
+      await _method.switchCamera(
+          facing == CameraFacing.front ? 'front' : 'back');
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> setAudioMuted(bool muted) async {
+    try {
+      await _method.setAudioMute(muted);
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<void> updateSponsors(List<SponsorOverlay> sponsors) async {
+    try {
+      await _method.updateSponsors(
+          sponsors.map((s) => s.toMap()).toList());
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  void dispose() {}
+}
