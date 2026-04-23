@@ -88,6 +88,7 @@ class FlutterRtmpBroadcasterPlugin :
         val width = call.argument<Int>("width") ?: 1280
         val height = call.argument<Int>("height") ?: 720
         val fps = call.argument<Int>("fps") ?: 30
+        val orientation = call.argument<String>("orientation") ?: "portrait"
         val initialFacing = call.argument<String>("initialFacing") ?: "back"
 
         val act = activity
@@ -99,7 +100,7 @@ class FlutterRtmpBroadcasterPlugin :
         cameraStreamManager?.release()
         try {
             cameraStreamManager = CameraStreamManager(ctx, act).also { manager ->
-                manager.initPreviewOnly(width, height, fps, initialFacing)
+                manager.initPreviewOnly(width, height, fps, orientation, initialFacing)
                 eventSink?.let { manager.setSink(it) }
             }
             result.success(null)

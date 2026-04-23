@@ -55,7 +55,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
         connectChecker.sink = sink
     }
 
-    fun initPreviewOnly(width: Int, height: Int, fps: Int, initialFacing: String) {
+    fun initPreviewOnly(width: Int, height: Int, fps: Int, orientation: String, initialFacing: String) {
         if (isPreviewReady) return
 
         encWidth = width
@@ -68,7 +68,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
 
-        genericStream.setOrientation(0)
+        configureGlForOrientation(orientation)
 
         overlayFilterManager = OverlayFilterManager(width, height)
         overlayFilterManager?.initLayers(genericStream, emptyList())
@@ -105,7 +105,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
                 throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
             }
 
-            genericStream.setOrientation(0)
+            configureGlForOrientation(orientation)
 
             overlayFilterManager = OverlayFilterManager(width, height)
             overlayFilterManager?.initLayers(genericStream, sponsors)
@@ -132,6 +132,25 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
     fun unbindPreview() {
         if (genericStream.isOnPreview) genericStream.stopPreview()
+    }
+
+    private fun configureGlForOrientation(orientation: String) {
+        val gl = genericStream.getGlInterface()
+        val isPortrait = orientation == "portrait"
+
+        gl.autoHandleOrientation = false
+        gl.setStreamIsPortrait(isPortrait)
+        gl.setPreviewIsPortrait(isPortrait)
+
+        if (isPortrait) {
+            gl.setStreamRotation(270)
+            gl.setPreviewRotation(270)
+        } else {
+            gl.setStreamRotation(0)
+            gl.setPreviewRotation(0)
+        }
+
+        genericStream.setOrientation(if (isPortrait) 90 else 0)
     }
 
     fun startStream() {
