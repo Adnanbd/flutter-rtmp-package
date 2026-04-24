@@ -193,6 +193,32 @@ Package must request permissions at runtime before `configure()`. Use `permissio
 
 ---
 
+## Orientation Handling (Portrait vs Landscape)
+
+The app UI stays in portrait mode regardless of streaming orientation. Physical device rotation is required for landscape mode. The GL interface must be configured separately for each orientation.
+
+### Portrait Mode (default)
+- Target resolution: 720×1280 or 1080×1920
+- GL settings:
+  - `autoHandleOrientation = false`
+  - `setStreamIsPortrait(true)` / `setPreviewIsPortrait(true)`
+  - `setStreamRotation(270)` / `setPreviewRotation(270)`
+  - `setOrientation(90)`
+
+### Landscape Mode
+- Target resolution: 1280×720 or 1920×1080
+- Physical phone rotation required (sensor auto-rotate OFF)
+- GL settings:
+  - `autoHandleOrientation = false`
+  - `setStreamIsPortrait(false)` / `setPreviewIsPortrait(false)`
+  - `setStreamRotation(90)` / `setPreviewRotation(90)`
+  - `setOrientation(270)`
+
+### Implementation Note
+In `CameraStreamManager.kt`, the `configureGlForOrientation()` function handles both modes. The key is that even when UI stays portrait, landscape streaming requires rotation 90 to convert portrait camera capture to landscape output.
+
+---
+
 ## Claude Code Behavior Notes
 
 - **Always update `PROJECT.md`** after adding, modifying, or completing any feature, task, or subtask. Mark checkboxes, update progress, add new entries. This file serves as the authoritative context tracker for all development work.

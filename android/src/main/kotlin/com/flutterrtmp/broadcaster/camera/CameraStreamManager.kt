@@ -138,6 +138,9 @@ class CameraStreamManager(private val context: Context, private val activity: an
         val gl = genericStream.getGlInterface()
         val isPortrait = orientation == "portrait"
 
+        Log.d(TAG, ">>> configureGlForOrientation START: orientation=$orientation, isPortrait=$isPortrait, enc=${encWidth}x${encHeight}")
+        Log.d(TAG, ">>> gl autoHandleOrientation=${gl.autoHandleOrientation}")
+
         gl.autoHandleOrientation = false
         gl.setStreamIsPortrait(isPortrait)
         gl.setPreviewIsPortrait(isPortrait)
@@ -145,15 +148,18 @@ class CameraStreamManager(private val context: Context, private val activity: an
         if (isPortrait) {
             gl.setStreamRotation(270)
             gl.setPreviewRotation(270)
+            genericStream.setOrientation(90)
+            Log.d(TAG, ">>> PORTRAIT: glRotation=270, setOrientation=90")
         } else {
             gl.setStreamRotation(0)
             gl.setPreviewRotation(0)
+            genericStream.setOrientation(270)
+            Log.d(TAG, ">>> LANDSCAPE: glRotation=0, setOrientation=270, isPortrait=$isPortrait")
         }
-
-        genericStream.setOrientation(if (isPortrait) 90 else 0)
     }
 
     fun startStream() {
+        Log.d(TAG, ">>> startStream called, isPreviewReady=$isPreviewReady, enc=${encWidth}x${encHeight}")
         intentionalStop = false
         reconnectAttempt = 0
         genericStream.startStream(rtmpEndpoint)
@@ -192,6 +198,47 @@ class CameraStreamManager(private val context: Context, private val activity: an
             activity?.requestedOrientation = orient
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set orientation: $e")
+        }
+
+        reinitializeForOrientation(orientation)
+    }
+
+    private fun reinitializeForOrientation(orientation: String) {
+        val isPortrait = orientation == "portrait"
+        val newWidth = if (isPortrait) 720 else 1280
+        val newHeight = if (isPortrait) 1280 else 720
+        val facing = if (genericStream.videoSource is com.pedro.encoder.input.sources.video.Camera2Source) {
+            (genericStream.videoSource as com.pedro.encoder.input.sources.video.Camera2Source).getCameraFacing().name
+        } else "back"
+
+        Log.d(TAG, ">>> reinitializeForOrientation: $orientation, newDims=${newWidth}x$newHeight, currentDims=${encWidth}x${encHeight}")
+
+        if (newWidth != encWidth || newHeight != encHeight) {
+            genericStream.release()
+            isPreviewReady = false
+
+            val videoOk = genericStream.prepareVideo(newWidth, newHeight, DEFAULT_BITRATE, 30, DEFAULT_KEYFRAME, 0)
+            val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+            if (!videoOk || !audioOk) {
+                Log.e(TAG, "reinitialize prepare failed: video=$videoOk audio=$audioOk")
+                return
+            }
+
+            encWidth = newWidth
+            encHeight = newHeight
+
+            configureGlForOrientation(orientation)
+
+            overlayFilterManager = OverlayFilterManager(newWidth, newHeight)
+            overlayFilterManager?.initLayers(genericStream, emptyList())
+
+            switchCamera(facing)
+
+            isPreviewReady = true
+            Log.d(TAG, ">>> reinitializeForOrientation COMPLETE: new dims ${encWidth}x${encHeight}")
+        } else {
+            configureGlForOrientation(orientation)
+            Log.d(TAG, ">>> reinitializeForOrientation SAME dims, applied GL config")
         }
     }
 
