@@ -138,9 +138,6 @@ class CameraStreamManager(private val context: Context, private val activity: an
         val gl = genericStream.getGlInterface()
         val isPortrait = orientation == "portrait"
 
-        Log.d(TAG, ">>> configureGlForOrientation START: orientation=$orientation, isPortrait=$isPortrait, enc=${encWidth}x${encHeight}")
-        Log.d(TAG, ">>> gl autoHandleOrientation=${gl.autoHandleOrientation}")
-
         gl.autoHandleOrientation = false
         gl.setStreamIsPortrait(isPortrait)
         gl.setPreviewIsPortrait(isPortrait)
@@ -149,17 +146,14 @@ class CameraStreamManager(private val context: Context, private val activity: an
             gl.setStreamRotation(270)
             gl.setPreviewRotation(270)
             genericStream.setOrientation(90)
-            Log.d(TAG, ">>> PORTRAIT: glRotation=270, setOrientation=90")
         } else {
             gl.setStreamRotation(0)
             gl.setPreviewRotation(0)
             genericStream.setOrientation(270)
-            Log.d(TAG, ">>> LANDSCAPE: glRotation=0, setOrientation=270, isPortrait=$isPortrait")
         }
     }
 
     fun startStream() {
-        Log.d(TAG, ">>> startStream called, isPreviewReady=$isPreviewReady, enc=${encWidth}x${encHeight}")
         intentionalStop = false
         reconnectAttempt = 0
         genericStream.startStream(rtmpEndpoint)
@@ -211,8 +205,6 @@ class CameraStreamManager(private val context: Context, private val activity: an
             (genericStream.videoSource as com.pedro.encoder.input.sources.video.Camera2Source).getCameraFacing().name
         } else "back"
 
-        Log.d(TAG, ">>> reinitializeForOrientation: $orientation, newDims=${newWidth}x$newHeight, currentDims=${encWidth}x${encHeight}")
-
         if (newWidth != encWidth || newHeight != encHeight) {
             genericStream.release()
             isPreviewReady = false
@@ -235,10 +227,8 @@ class CameraStreamManager(private val context: Context, private val activity: an
             switchCamera(facing)
 
             isPreviewReady = true
-            Log.d(TAG, ">>> reinitializeForOrientation COMPLETE: new dims ${encWidth}x${encHeight}")
         } else {
             configureGlForOrientation(orientation)
-            Log.d(TAG, ">>> reinitializeForOrientation SAME dims, applied GL config")
         }
     }
 

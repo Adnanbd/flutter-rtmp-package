@@ -211,11 +211,40 @@ The app UI stays in portrait mode regardless of streaming orientation. Physical 
 - GL settings:
   - `autoHandleOrientation = false`
   - `setStreamIsPortrait(false)` / `setPreviewIsPortrait(false)`
-  - `setStreamRotation(90)` / `setPreviewRotation(90)`
+  - `setStreamRotation(0)` / `setPreviewRotation(0)`
   - `setOrientation(270)`
 
 ### Implementation Note
-In `CameraStreamManager.kt`, the `configureGlForOrientation()` function handles both modes. The key is that even when UI stays portrait, landscape streaming requires rotation 90 to convert portrait camera capture to landscape output.
+In `CameraStreamManager.kt`, the `configureGlForOrientation()` function handles both modes. When orientation changes via dropdown, `reinitializeForOrientation()` is called to reconfigure the encoder with new dimensions and apply GL settings.
+
+**Key insight:** For landscape mode, GL rotation is 0 (no rotation) while setOrientation is 270. This allows the portrait camera capture to be encoded in landscape dimensions (1280×720) without unwanted rotation.
+
+### iOS Implementation Note (M5)
+
+**Important learnings from Android that apply to iOS:**
+
+1. **Core Principle:** Camera always captures in portrait (because UI stays portrait). For landscape streaming, we need different output dimensions (1280×720) and rotation applied at encoder level.
+
+2. **User Flow:** Same as Android:
+   - User selects "Landscape" in dropdown
+   - Physical phone rotation required (sensor auto-rotate OFF)
+   - Camera preview stays portrait (no change)
+   - Stream output: 1280×720 dimension, no rotation
+
+3. **HaishinKit Equivalent Settings:** Research needed for:
+   - `StreamSession` / `MediaMixer` orientation API
+   - Rotation equivalent to `setOrientation(270)` for landscape
+   - Whether reconfiguration is needed on orientation change
+
+4. **Key Differences to Test:**
+   - Portrait: Output 720×1280, rotation 90 equivalent
+   - Landscape: Output 1280×720, rotation 270 equivalent (no GL rotation)
+
+5. **Testing Checklist:**
+   - [ ] Portrait video fills screen
+   - [ ] Landscape video fills screen
+   - [ ] No unwanted rotation in landscape
+   - [ ] Dimension correct in both modes
 
 ---
 
