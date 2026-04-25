@@ -42,6 +42,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
     private var encWidth = 0
     private var encHeight = 0
+    private var lastScorebandBytes: ByteArray? = null
     var rtmpEndpoint: String = ""
         private set
     private var isPreviewReady = false
@@ -91,8 +92,6 @@ class CameraStreamManager(private val context: Context, private val activity: an
         initialFacing: String
     ) {
         this.rtmpEndpoint = rtmpEndpoint
-        this.encWidth = width
-        this.encHeight = height
 
         if (!isPreviewReady || width != encWidth || height != encHeight) {
             genericStream.release()
@@ -105,16 +104,22 @@ class CameraStreamManager(private val context: Context, private val activity: an
                 throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
             }
 
+            this.encWidth = width
+            this.encHeight = height
+
             configureGlForOrientation(orientation)
 
             overlayFilterManager = OverlayFilterManager(width, height)
             overlayFilterManager?.initLayers(genericStream, sponsors)
 
+            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
+
             switchCamera(initialFacing)
 
             isPreviewReady = true
         } else {
-            overlayFilterManager?.initLayers(genericStream, sponsors)
+            // Same dims — refresh sponsors only; scoreband filter already exists from initPreview.
+            overlayFilterManager?.updateSponsors(genericStream, sponsors)
             switchCamera(initialFacing)
         }
 
@@ -156,6 +161,8 @@ class CameraStreamManager(private val context: Context, private val activity: an
     fun startStream() {
         intentionalStop = false
         reconnectAttempt = 0
+        val filtersBefore = genericStream.getGlInterface().filtersCount()
+        Log.d(TAG, "startStream: previewReady=$isPreviewReady, onPreview=${genericStream.isOnPreview}, overlayMgr=${overlayFilterManager != null}, filtersCount=$filtersBefore, enc=${encWidth}x${encHeight}")
         genericStream.startStream(rtmpEndpoint)
     }
 
@@ -166,6 +173,9 @@ class CameraStreamManager(private val context: Context, private val activity: an
     }
 
     fun updateScoreband(bytes: ByteArray) {
+        lastScorebandBytes = bytes
+        val filters = genericStream.getGlInterface().filtersCount()
+        Log.d(TAG, "updateScoreband: bytes=${bytes.size}, filtersCount=$filters, streaming=${genericStream.isStreaming}, onPreview=${genericStream.isOnPreview}")
         overlayFilterManager?.updateScoreband(bytes)
     }
 
@@ -223,6 +233,8 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
             overlayFilterManager = OverlayFilterManager(newWidth, newHeight)
             overlayFilterManager?.initLayers(genericStream, emptyList())
+
+            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
             switchCamera(facing)
 

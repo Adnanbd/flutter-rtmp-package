@@ -75,7 +75,16 @@
       "Bash(unzip -p /Users/agl-mac/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/library/2.7.2/29c63816d9a815c3572ae9ece86b7986406200f/library-2.7.2.aar classes.jar)",
       "Bash(unzip -l /tmp/lib.jar)",
       "Bash(unzip -p /Users/agl-mac/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/encoder/2.7.2/d65f4ec137a0e0abfb5e0ccdd863fe33e1abcf2e/encoder-2.7.2.aar classes.jar)",
-      "Bash(unzip -l /tmp/enc.jar)"
+      "Bash(unzip -l /tmp/enc.jar)",
+      "Bash(rm -rf library-extract)",
+      "Bash(mkdir library-extract *)",
+      "Bash(unzip -q /Users/agl-mac/.gradle/caches/8.14/transforms/8d7289b4fdc7d48385b69aba8428af48/transformed/library-2.7.2-runtime/jars/classes.jar -d library-extract)",
+      "Bash(unzip -q /Users/agl-mac/.gradle/caches/8.14/transforms/7846e8f0ac699620ef4fddf235ef4f7b/transformed/library-2.7.2/jars/classes.jar -d library-extract)",
+      "Bash(awk '/private final void draw/,/^  [a-z]/')",
+      "Bash(awk '/public void setScale\\\\\\(float, float\\\\\\);/,/^  [a-z]/')",
+      "Bash(git *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

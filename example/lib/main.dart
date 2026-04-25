@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -203,9 +204,14 @@ class _CameraScreenState extends State<_CameraScreen> {
   CameraFacing _currentFacing = CameraFacing.back;
   bool _muted = false;
   bool _streaming = false;
-  int _score = 0;
   Timer? _scoreTimer;
   StreamSubscription<RtmpStatus>? _statusSub;
+
+  final String _homeTeam = 'TEAM A';
+  final String _awayTeam = 'TEAM B';
+  int _homeScore = 0;
+  int _awayScore = 0;
+  int _matchTime = 0;
 
   @override
   void initState() {
@@ -218,6 +224,9 @@ class _CameraScreenState extends State<_CameraScreen> {
       switch (s.type) {
         case RtmpStatusType.connected:
           _streaming = true;
+          // Scoreband widget rebuilds with Opacity(1.0) on this setState.
+          // Push after the next frame so the capture is non-transparent.
+          WidgetsBinding.instance.addPostFrameCallback((_) => _pushScoreband());
         case RtmpStatusType.disconnected:
           _streaming = false;
         case RtmpStatusType.error:
@@ -251,15 +260,34 @@ class _CameraScreenState extends State<_CameraScreen> {
   }
 
   Future<void> _pushScoreband() async {
+    final ctx = _scoreBandKey.currentContext;
+    if (ctx == null) {
+      debugPrint('[scoreband] key has no context — widget not rendered yet');
+      return;
+    }
+    final boundary = ctx.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) {
+      debugPrint('[scoreband] boundary null — no RenderRepaintBoundary');
+      return;
+    }
+    if (boundary.debugNeedsPaint) {
+      debugPrint('[scoreband] boundary needs paint — waiting one frame');
+      await WidgetsBinding.instance.endOfFrame;
+    }
     try {
-      final boundary = _scoreBandKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 2.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return;
+      if (byteData == null) {
+        debugPrint('[scoreband] toByteData returned null');
+        return;
+      }
       final bytes = byteData.buffer.asUint8List();
+      debugPrint('[scoreband] captured ${image.width}x${image.height}, ${bytes.length} bytes — sending to native');
       await widget.controller.updateScoreband(bytes);
-    } catch (_) {}
+      debugPrint('[scoreband] updateScoreband returned OK');
+    } catch (e, st) {
+      debugPrint('[scoreband] PUSH FAILED: $e\n$st');
+    }
   }
 
   void _showSettingsModal() {
@@ -307,6 +335,7 @@ class _CameraScreenState extends State<_CameraScreen> {
                     onChanged: (v) async {
                       if (v == null) return;
                       await widget.controller.setAppOrientation(v);
+                      if (!context.mounted) return;
                       setState(() => _selectedOrient = v);
                       Navigator.pop(ctx);
                     },
@@ -324,7 +353,11 @@ class _CameraScreenState extends State<_CameraScreen> {
   void _startScorebandTimer() {
     _scoreTimer?.cancel();
     _scoreTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      setState(() => _score++);
+      setState(() {
+        _homeScore = Random().nextInt(5);
+        _awayScore = Random().nextInt(5);
+        _matchTime += 3;
+      });
       _pushScoreband();
     });
   }
@@ -363,32 +396,108 @@ class _CameraScreenState extends State<_CameraScreen> {
               ),
             ),
 
-          // Scoreband overlay (visible when streaming)
-          if (_streaming)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              right: 16,
-              child: RepaintBoundary(
-                key: _scoreBandKey,
+          // Scoreband overlay. While streaming, painted OFF-SCREEN so only
+          // native GL filter output is visible on preview. Still rendered at
+          // opacity 1.0 for RepaintBoundary.toImage() capture.
+          Positioned(
+            bottom: _streaming ? -10000 : 100,
+            left: 16,
+            right: 16,
+            child: RepaintBoundary(
+              key: _scoreBandKey,
+              child: Opacity(
+                opacity: _streaming ? 1.0 : 0.0,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'SCORE: $_score',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E3A5F), Color(0xFF2E5A8F)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
-                    textAlign: TextAlign.center,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _homeTeam,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '$_homeScore',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "$_matchTime'",
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Text(
+                            'LIVE',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _awayTeam,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '$_awayScore',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
+          ),
 
           // Three floating buttons (bottom)
           Positioned(

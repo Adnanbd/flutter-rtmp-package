@@ -1,6 +1,5 @@
 package com.flutterrtmp.broadcaster.overlay
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
@@ -17,13 +16,16 @@ class OverlayFilterManager(
 
     private val sponsorFilters = mutableListOf<ImageObjectFilterRender>()
     private var scorebandFilter: ImageObjectFilterRender? = null
+    private var streamRef: GenericStream? = null
 
-    // Initializes all overlay layers in render order: sponsor_0…N → scoreband.
-    // Must be called after prepareVideo/prepareAudio and before startPreview.
+    // Initializes sponsor layers. Scoreband filter is created lazily on first
+    // updateScoreband() call (canonical RootEncoder pattern: configure filter
+    // fully — setImage + setScale + setPosition — BEFORE addFilter).
     fun initLayers(
         stream: GenericStream,
         sponsorList: List<SponsorConfig>
     ) {
+        streamRef = stream
         sponsorFilters.clear()
         scorebandFilter = null
 
@@ -34,43 +36,54 @@ class OverlayFilterManager(
                 continue
             }
             val filter = ImageObjectFilterRender()
-            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             filter.setImage(bitmap)
+            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
 
-        // Scoreband layer: invisible placeholder until first updateScoreband call.
-        val sbFilter = ImageObjectFilterRender()
-        sbFilter.setAlpha(0f)
-        stream.getGlInterface().addFilter(sbFilter)
-        scorebandFilter = sbFilter
+        Log.d(TAG, "initLayers: sponsors=${sponsorFilters.size}, scoreband=lazy, streamDims=${streamWidth}x${streamHeight}")
     }
 
-    // Thread-safe: RootEncoder dispatches setImage to the GL thread internally.
     fun updateScoreband(pngBytes: ByteArray) {
-        val filter = scorebandFilter ?: return
+        val stream = streamRef
+        if (stream == null) {
+            Log.w(TAG, "updateScoreband: streamRef NULL — initLayers not called")
+            return
+        }
         val bitmap = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size)
         if (bitmap == null) {
-            Log.w(TAG, "Failed to decode scoreband PNG — update skipped")
+            Log.w(TAG, "Failed to decode scoreband PNG — update skipped (bytes=${pngBytes.size})")
             return
         }
 
-        // Scale: full stream width; height preserves aspect ratio, capped at stream height.
-        // setScale takes percentage (0-100), where 100 = 100% of the frame dimension.
-        val pixelH = (streamWidth.toFloat() * bitmap.height.toFloat() / bitmap.width.toFloat())
-            .coerceAtMost(streamHeight.toFloat())
-        val pctH = pixelH / streamHeight.toFloat() * 100f
+        val centreAlpha = android.graphics.Color.alpha(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2))
 
-        filter.setScale(100f, pctH)
+        // RootEncoder Sprite: scale and position both 0-100% of stream frame.
+        // (0,0) = top-left, (100,100) = bottom-right.
+        val widthPct = 90f
+        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+        val heightPct = (widthPct / 100f) * (streamWidth.toFloat() / streamHeight.toFloat()) / bitmapAspect * 100f
+        val bottomMarginPct = 4f
+        val posX = (100f - widthPct) / 2f
+        val posY = 100f - heightPct - bottomMarginPct
 
-        // Position: center horizontally (ndcX=0), bottom-aligned.
-        // NDC y of center = -1 + pctH/100 (y=-1 is bottom edge in RootEncoder).
-        val ndcY = -1f + pctH / 100f
-        filter.setPosition(0f, ndcY)
-
-        filter.setAlpha(1f)
-        filter.setImage(bitmap)
+        val existing = scorebandFilter
+        if (existing == null) {
+            // First call: create filter fully configured, THEN add to GL.
+            val filter = ImageObjectFilterRender()
+            filter.setImage(bitmap)
+            filter.setScale(widthPct, heightPct)
+            filter.setPosition(posX, posY)
+            stream.getGlInterface().addFilter(filter)
+            scorebandFilter = filter
+            Log.d(TAG, "updateScoreband[create]: bmp=${bitmap.width}x${bitmap.height}, alpha=$centreAlpha, scale=${widthPct}x${heightPct}%, pos=($posX,$posY)%, glFilters=${stream.getGlInterface().filtersCount()}")
+        } else {
+            existing.setImage(bitmap)
+            existing.setScale(widthPct, heightPct)
+            existing.setPosition(posX, posY)
+            Log.d(TAG, "updateScoreband[update]: bmp=${bitmap.width}x${bitmap.height}, alpha=$centreAlpha, scale=${widthPct}x${heightPct}%, pos=($posX,$posY)%")
+        }
     }
 
     fun updateSponsors(stream: GenericStream, sponsorList: List<SponsorConfig>) {
@@ -86,8 +99,8 @@ class OverlayFilterManager(
                 continue
             }
             val filter = ImageObjectFilterRender()
-            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             filter.setImage(bitmap)
+            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
@@ -97,20 +110,16 @@ class OverlayFilterManager(
         stream.getGlInterface().clearFilters()
         sponsorFilters.clear()
         scorebandFilter = null
+        streamRef = null
     }
 
-    // Converts normalized top-left (x, y, w, h in 0-1) to RootEncoder's percentage scale
-    // and NDC center position (y-up, origin = center of frame).
+    // Normalized 0-1 top-left rect → RootEncoder's 0-100% screen coords.
+    // Sprite: (0,0) = top-left, (100,100) = bottom-right.
     private fun applyPosition(
         filter: ImageObjectFilterRender,
         x: Float, y: Float, w: Float, h: Float
     ) {
-        // setScale takes percentage (0-100), where 100 = 100% of the frame dimension.
         filter.setScale(w * 100f, h * 100f)
-
-        // Convert normalized top-left to NDC center: x∈[-1,1], y∈[-1,1] (y-up).
-        val ndcX = (x + w / 2f) * 2f - 1f
-        val ndcY = 1f - (y + h / 2f) * 2f
-        filter.setPosition(ndcX, ndcY)
+        filter.setPosition(x * 100f, y * 100f)
     }
 }
