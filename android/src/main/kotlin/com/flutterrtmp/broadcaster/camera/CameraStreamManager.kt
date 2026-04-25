@@ -71,7 +71,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
         configureGlForOrientation(orientation)
 
-        overlayFilterManager = OverlayFilterManager(width, height)
+        overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
         overlayFilterManager?.initLayers(genericStream, emptyList())
 
         switchCamera(initialFacing)
@@ -109,7 +109,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
             configureGlForOrientation(orientation)
 
-            overlayFilterManager = OverlayFilterManager(width, height)
+            overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
             overlayFilterManager?.initLayers(genericStream, sponsors)
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
@@ -231,7 +231,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
             configureGlForOrientation(orientation)
 
-            overlayFilterManager = OverlayFilterManager(newWidth, newHeight)
+            overlayFilterManager = OverlayFilterManager(newWidth, newHeight, isPortrait)
             overlayFilterManager?.initLayers(genericStream, emptyList())
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }

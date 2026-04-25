@@ -1,13 +1,20 @@
 package com.flutterrtmp.broadcaster.overlay
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.util.Log
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.library.generic.GenericStream
 
 class OverlayFilterManager(
+    // Encoder (post-rotation) dimensions. Portrait: 720x1280. Landscape: 1280x720.
     private val streamWidth: Int,
-    private val streamHeight: Int
+    private val streamHeight: Int,
+    // True when stream rotation is applied (setStreamRotation(270)).
+    // Filters render in PRE-rotation (camera-native landscape) coordinate space,
+    // so portrait needs counter-rotated bitmap and swapped scale/position.
+    private val isPortrait: Boolean
 ) {
 
     companion object {
@@ -18,9 +25,6 @@ class OverlayFilterManager(
     private var scorebandFilter: ImageObjectFilterRender? = null
     private var streamRef: GenericStream? = null
 
-    // Initializes sponsor layers. Scoreband filter is created lazily on first
-    // updateScoreband() call (canonical RootEncoder pattern: configure filter
-    // fully — setImage + setScale + setPosition — BEFORE addFilter).
     fun initLayers(
         stream: GenericStream,
         sponsorList: List<SponsorConfig>
@@ -36,13 +40,13 @@ class OverlayFilterManager(
                 continue
             }
             val filter = ImageObjectFilterRender()
-            filter.setImage(bitmap)
-            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
+            filter.setImage(orientBitmap(bitmap))
+            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
 
-        Log.d(TAG, "initLayers: sponsors=${sponsorFilters.size}, scoreband=lazy, streamDims=${streamWidth}x${streamHeight}")
+        Log.d(TAG, "initLayers: sponsors=${sponsorFilters.size}, scoreband=lazy, encDims=${streamWidth}x${streamHeight}, isPortrait=$isPortrait")
     }
 
     fun updateScoreband(pngBytes: ByteArray) {
@@ -57,32 +61,50 @@ class OverlayFilterManager(
             return
         }
 
-        val centreAlpha = android.graphics.Color.alpha(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2))
-
-        // RootEncoder Sprite: scale and position both 0-100% of stream frame.
-        // (0,0) = top-left, (100,100) = bottom-right.
+        // Compute target placement in POST-rotation (stream output) frame.
+        // Width 90%, height proportional, anchored 4% from bottom.
         val widthPct = 90f
         val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-        val heightPct = (widthPct / 100f) * (streamWidth.toFloat() / streamHeight.toFloat()) / bitmapAspect * 100f
+        val postScaleX = widthPct
+        val postScaleY = (widthPct / 100f) * (streamWidth.toFloat() / streamHeight.toFloat()) / bitmapAspect * 100f
         val bottomMarginPct = 4f
-        val posX = (100f - widthPct) / 2f
-        val posY = 100f - heightPct - bottomMarginPct
+        val postPosX = (100f - postScaleX) / 2f
+        val postPosY = 100f - postScaleY - bottomMarginPct
+
+        // Convert to PRE-rotation coords (where filter actually renders).
+        val finalBitmap = orientBitmap(bitmap)
+        val scaleX: Float
+        val scaleY: Float
+        val posX: Float
+        val posY: Float
+        if (isPortrait) {
+            // Frame rotates 90° CCW. Pre→Post: (xPre,yPre) → (yPre, Wpre-xPre).
+            // Pre-rect top-left (post-rotation top-left maps to pre x = Wpre-(postY+postScaleY)).
+            scaleX = postScaleY
+            scaleY = postScaleX
+            posX = 100f - postPosY - postScaleY
+            posY = postPosX
+        } else {
+            scaleX = postScaleX
+            scaleY = postScaleY
+            posX = postPosX
+            posY = postPosY
+        }
 
         val existing = scorebandFilter
         if (existing == null) {
-            // First call: create filter fully configured, THEN add to GL.
             val filter = ImageObjectFilterRender()
-            filter.setImage(bitmap)
-            filter.setScale(widthPct, heightPct)
+            filter.setImage(finalBitmap)
+            filter.setScale(scaleX, scaleY)
             filter.setPosition(posX, posY)
             stream.getGlInterface().addFilter(filter)
             scorebandFilter = filter
-            Log.d(TAG, "updateScoreband[create]: bmp=${bitmap.width}x${bitmap.height}, alpha=$centreAlpha, scale=${widthPct}x${heightPct}%, pos=($posX,$posY)%, glFilters=${stream.getGlInterface().filtersCount()}")
+            Log.d(TAG, "updateScoreband[create]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%, isPortrait=$isPortrait, glFilters=${stream.getGlInterface().filtersCount()}")
         } else {
-            existing.setImage(bitmap)
-            existing.setScale(widthPct, heightPct)
+            existing.setImage(finalBitmap)
+            existing.setScale(scaleX, scaleY)
             existing.setPosition(posX, posY)
-            Log.d(TAG, "updateScoreband[update]: bmp=${bitmap.width}x${bitmap.height}, alpha=$centreAlpha, scale=${widthPct}x${heightPct}%, pos=($posX,$posY)%")
+            Log.d(TAG, "updateScoreband[update]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%")
         }
     }
 
@@ -99,8 +121,8 @@ class OverlayFilterManager(
                 continue
             }
             val filter = ImageObjectFilterRender()
-            filter.setImage(bitmap)
-            applyPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
+            filter.setImage(orientBitmap(bitmap))
+            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
@@ -113,13 +135,29 @@ class OverlayFilterManager(
         streamRef = null
     }
 
-    // Normalized 0-1 top-left rect → RootEncoder's 0-100% screen coords.
-    // Sprite: (0,0) = top-left, (100,100) = bottom-right.
-    private fun applyPosition(
+    // Counter-rotates bitmap 90° CW so it appears upright after the frame's 90° CCW rotation.
+    private fun orientBitmap(src: Bitmap): Bitmap {
+        if (!isPortrait) return src
+        val matrix = Matrix().apply { postRotate(90f) }
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
+    }
+
+    // Sponsor position: normalized (0-1) top-left rect in POST-rotation frame
+    // → 0-100% PRE-rotation coords. Same swap rule as scoreband.
+    private fun applySponsorPosition(
         filter: ImageObjectFilterRender,
         x: Float, y: Float, w: Float, h: Float
     ) {
-        filter.setScale(w * 100f, h * 100f)
-        filter.setPosition(x * 100f, y * 100f)
+        val postPosX = x * 100f
+        val postPosY = y * 100f
+        val postScaleX = w * 100f
+        val postScaleY = h * 100f
+        if (isPortrait) {
+            filter.setScale(postScaleY, postScaleX)
+            filter.setPosition(100f - postPosY - postScaleY, postPosX)
+        } else {
+            filter.setScale(postScaleX, postScaleY)
+            filter.setPosition(postPosX, postPosY)
+        }
     }
 }
