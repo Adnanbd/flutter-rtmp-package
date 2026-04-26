@@ -440,10 +440,13 @@ HaishinKit `MediaMixer` so the same pipeline can later publish.
 - [ ] Updates whenever `MockScoreService` emits
 - [ ] After each update: auto-captures and calls `controller.updateScoreband()`
 
-### M9.5 — Sponsor Image Demo
-- [ ] Add two demo PNG assets to `example/assets/`
-- [ ] Load them at app start: `rootBundle.load('assets/sponsor_a.png')`
-- [ ] Pass to `controller.configure()` with different normalized positions
+### M9.5 — Sponsor Image Upload (Config Screen) ✅
+- [x] `image_picker: ^1.1.2` added to `example/pubspec.yaml`
+- [x] `READ_MEDIA_IMAGES` permission added to `example/android/app/src/main/AndroidManifest.xml`
+- [x] `NSPhotoLibraryUsageDescription` added to `example/ios/Runner/Info.plist`
+- [x] `rtmp_config_screen.dart` rewritten with dynamic sponsor UI: up to 3 image slots, gallery picker, per-slot Left/Middle/Right position toggle, remove button, thumbnail preview
+- [x] `_buildSponsors()` converts selected images to `SponsorOverlay` with normalized positions (y=0.02, h=0.08; x=0.02/0.39/0.76 for L/M/R)
+- [x] `configure()` now passes real sponsor list instead of hardcoded `[]`
 
 ### M9.6 — Example App End-to-End
 - [ ] Full flow works on Android physical device

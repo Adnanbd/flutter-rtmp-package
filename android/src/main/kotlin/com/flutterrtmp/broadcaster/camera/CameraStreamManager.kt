@@ -43,6 +43,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
     private var encWidth = 0
     private var encHeight = 0
     private var lastScorebandBytes: ByteArray? = null
+    private var lastSponsors: List<SponsorConfig> = emptyList()
     var rtmpEndpoint: String = ""
         private set
     private var isPreviewReady = false
@@ -92,6 +93,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
         initialFacing: String
     ) {
         this.rtmpEndpoint = rtmpEndpoint
+        this.lastSponsors = sponsors
 
         if (!isPreviewReady || width != encWidth || height != encHeight) {
             genericStream.release()
@@ -232,7 +234,7 @@ class CameraStreamManager(private val context: Context, private val activity: an
             configureGlForOrientation(orientation)
 
             overlayFilterManager = OverlayFilterManager(newWidth, newHeight, isPortrait)
-            overlayFilterManager?.initLayers(genericStream, emptyList())
+            overlayFilterManager?.initLayers(genericStream, lastSponsors)
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
