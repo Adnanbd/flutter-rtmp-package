@@ -84,7 +84,10 @@
       "Bash(awk '/public void setScale\\\\\\(float, float\\\\\\);/,/^  [a-z]/')",
       "Bash(git *)",
       "Bash(gh api *)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:pedrosg94.github.io)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:jitpack.io)"
     ]
   }
 }
