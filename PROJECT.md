@@ -636,7 +636,7 @@ Re-verify each finding against HaishinKit `ScreenObject`; do not assume Android 
 | Sponsors sent once at configure() | They don't change; batching them in configure avoids repeated channel calls |
 | Package owns camera 100% | Prevents camera session conflicts with Flutter `camera` package |
 | Normalized positions (0.0–1.0) in Dart | Resolution-agnostic; native converts to pixels using stream dimensions |
-| Default resolution 1280×720 | Balanced quality and encoding cost for live sports broadcast |
+| Default resolution 720×1280 (portrait) | `StreamConfig.defaultConfig = youtube720Portrait`; four presets available (720p/1080p × portrait/landscape), user selects on config screen before going live; portrait is default because primary use case is phone-held-upright broadcast |
 | PNG format for scoreband bytes | Simple, lossless, universally decodable; at 0.3–0.5fps the cost is negligible |
 | No Timer.periodic in package | Push model is simpler, lower latency, and avoids capturing unchanged frames |
 | MethodChannel for overlay bytes | Simple and sufficient at 0.3fps; upgrade to BinaryCodec only if profiling shows need |

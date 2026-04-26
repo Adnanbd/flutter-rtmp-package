@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
+import 'package:flutter_rtmp_broadcaster_example/score.band/score.band.dart';
 
 import '../widgets/camera_controls_bar.dart';
 import '../widgets/scoreband_widget.dart';
@@ -79,10 +80,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _goBack() async {
     _scoreTimer?.cancel();
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
     widget.controller.dispose();
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -104,7 +102,7 @@ class _CameraScreenState extends State<CameraScreen> {
       await WidgetsBinding.instance.endOfFrame;
     }
     try {
-      final image = await boundary.toImage(pixelRatio: 2.0);
+      final image = await boundary.toImage(pixelRatio: 1.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {
         debugPrint('[scoreband] toByteData returned null');
@@ -123,7 +121,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _scoreTimer?.cancel();
     _scoreTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       setState(() {
-        _homeScore = Random().nextInt(5);
+        _homeScore = _homeScore + Random().nextInt(5);
         _awayScore = Random().nextInt(5);
         _matchTime += 3;
       });
@@ -150,9 +148,7 @@ class _CameraScreenState extends State<CameraScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            const Positioned.fill(
-              child: RtmpBroadcastWidget(),
-            ),
+            const Positioned.fill(child: RtmpBroadcastWidget()),
 
             // Back button — only when not streaming
             if (!_streaming)
@@ -167,19 +163,25 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
 
+            // Positioned(
+            //   bottom: _streaming ? -10000 : 100,
+            //   left: 16,
+            //   right: 16,
+            //   child: ScoreBandView(
+            //     repaintBoundaryKey: _scoreBandKey,
+            //     homeTeam: _homeTeam,
+            //     awayTeam: _awayTeam,
+            //     homeScore: _homeScore,
+            //     awayScore: _awayScore,
+            //     matchTime: _matchTime,
+            //     streaming: _streaming,
+            //   ),
+            // ),
             Positioned(
-              bottom: _streaming ? -10000 : 100,
+              bottom: _streaming ? -10000 : 16,
               left: 16,
               right: 16,
-              child: ScorebandWidget(
-                repaintBoundaryKey: _scoreBandKey,
-                homeTeam: _homeTeam,
-                awayTeam: _awayTeam,
-                homeScore: _homeScore,
-                awayScore: _awayScore,
-                matchTime: _matchTime,
-                streaming: _streaming,
-              ),
+              child: ScoreBandView(repaintBoundaryKey: _scoreBandKey, homeScore: _homeScore),
             ),
 
             Positioned(
