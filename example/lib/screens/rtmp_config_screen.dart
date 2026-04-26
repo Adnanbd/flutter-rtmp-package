@@ -22,17 +22,32 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
   final _keyCtrl = TextEditingController(text: '0rqt-kuhd-qkah-vqbk-1j7y');
   bool _connecting = false;
 
+  VideoResolution _selectedRes = VideoResolution.hd720;
+  VideoOrientation _selectedOrient = VideoOrientation.portrait;
+
   final List<_SponsorItem> _sponsors = [];
   final _picker = ImagePicker();
 
   static const _posX = [0.02, 0.39, 0.76];
   static const _posLabels = ['Left', 'Middle', 'Right'];
 
+  StreamConfig _buildConfig() {
+    if (_selectedOrient == VideoOrientation.portrait) {
+      return _selectedRes == VideoResolution.hd720 ? StreamConfig.youtube720Portrait : StreamConfig.youtube1080Portrait;
+    } else {
+      return _selectedRes == VideoResolution.hd720
+          ? StreamConfig.youtube720Landscape
+          : StreamConfig.youtube1080Landscape;
+    }
+  }
+
   Future<void> _addSponsor() async {
     final file = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
     if (file == null) return;
     final bytes = await file.readAsBytes();
-    setState(() => _sponsors.add(_SponsorItem(bytes, _sponsors.length.clamp(0, 2))));
+    final taken = _sponsors.map((s) => s.positionIndex).toSet();
+    final free = [0, 1, 2].firstWhere((p) => !taken.contains(p), orElse: () => 0);
+    setState(() => _sponsors.add(_SponsorItem(bytes, free)));
   }
 
   Future<void> _replaceSponsorImage(int index) async {
@@ -43,15 +58,14 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
   }
 
   List<SponsorOverlay> _buildSponsors() {
-    return _sponsors.map((s) => SponsorOverlay(
-      bytes: s.bytes,
-      position: OverlayPosition(
-        x: _posX[s.positionIndex],
-        y: 0.02,
-        width: 0.22,
-        height: 0.08,
-      ),
-    )).toList();
+    return _sponsors
+        .map(
+          (s) => SponsorOverlay(
+            bytes: s.bytes,
+            position: OverlayPosition(x: _posX[s.positionIndex], y: 0.02, width: 0.22, height: 0.08),
+          ),
+        )
+        .toList();
   }
 
   Future<void> _connect() async {
@@ -64,19 +78,12 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
     setState(() => _connecting = true);
     try {
       final controller = RtmpBroadcastController();
-      final config = StreamConfig.defaultConfig;
+      final config = _buildConfig();
       await controller.initPreview(config: config);
-      await controller.configure(
-        rtmpUrl: url,
-        rtmpKey: key,
-        sponsors: _buildSponsors(),
-        config: config,
-      );
+      await controller.configure(rtmpUrl: url, rtmpKey: key, sponsors: _buildSponsors(), config: config);
       await controller.setAppOrientation(config.orientation);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => CameraScreen(controller: controller)),
-      );
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CameraScreen(controller: controller)));
     } on RtmpBroadcasterException catch (e) {
       _showSnack('Failed: ${e.code} — ${e.message}');
     } finally {
@@ -108,39 +115,42 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
               onTap: () => _replaceSponsorImage(index),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 80,
-                  height: 80,
-                  child: Image.memory(sponsor.bytes, fit: BoxFit.cover),
-                ),
+                child: SizedBox(width: 60, height: 60, child: Image.memory(sponsor.bytes, fit: BoxFit.contain)),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Sponsor ${index + 1}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  Row(
+                    children: [
+                      Text('Sponsor ${index + 1}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => setState(() => _sponsors.removeAt(index)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Position on stream',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
+                  const Text('Position on stream', style: TextStyle(fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 4),
                   SegmentedButton<int>(
                     segments: [
                       for (var p = 0; p < 3; p++)
                         ButtonSegment<int>(
                           value: p,
-                          label: Text(_posLabels[p], style: const TextStyle(fontSize: 12)),
+                          label: Text(_posLabels[p], style: const TextStyle(fontSize: 10)),
+                          enabled: p == sponsor.positionIndex ||
+                              !_sponsors.asMap().entries
+                                  .where((e) => e.key != index)
+                                  .any((e) => e.value.positionIndex == p),
                         ),
                     ],
                     selected: {sponsor.positionIndex},
-                    onSelectionChanged: (s) =>
-                        setState(() => sponsor.positionIndex = s.first),
+                    onSelectionChanged: (s) => setState(() => sponsor.positionIndex = s.first),
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -148,11 +158,6 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                   ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 20),
-              onPressed: () => setState(() => _sponsors.removeAt(index)),
-              visualDensity: VisualDensity.compact,
             ),
           ],
         ),
@@ -195,18 +200,54 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
               ),
               obscureText: true,
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
+            // Stream settings
+            const Text('Stream Settings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Text(
-                  'Sponsor Images',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                const SizedBox(width: 100, child: Text('Resolution')),
+                Expanded(
+                  child: DropdownButtonFormField<VideoResolution>(
+                    initialValue: _selectedRes,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    items: const [
+                      DropdownMenuItem(value: VideoResolution.hd720, child: Text('720p')),
+                      DropdownMenuItem(value: VideoResolution.fhd1080, child: Text('1080p')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _selectedRes = v);
+                    },
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const SizedBox(width: 100, child: Text('Orientation')),
+                Expanded(
+                  child: DropdownButtonFormField<VideoOrientation>(
+                    initialValue: _selectedOrient,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    items: const [
+                      DropdownMenuItem(value: VideoOrientation.portrait, child: Text('Portrait')),
+                      DropdownMenuItem(value: VideoOrientation.landscape, child: Text('Landscape')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _selectedOrient = v);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            // Sponsor section
+            Row(
+              children: [
+                const Text('Sponsor Images', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
-                Text(
-                  'optional · up to 3',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                ),
+                Text('optional · up to 3', style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
               ],
             ),
             const SizedBox(height: 10),
@@ -216,9 +257,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                 onPressed: _addSponsor,
                 icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
                 label: const Text('Add Sponsor Image'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               ),
             const SizedBox(height: 32),
             SizedBox(

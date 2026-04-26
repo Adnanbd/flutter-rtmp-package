@@ -4,11 +4,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
 
 import '../widgets/camera_controls_bar.dart';
 import '../widgets/scoreband_widget.dart';
-import '../widgets/settings_sheet.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key, required this.controller});
@@ -21,8 +21,6 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen> {
   final _scoreBandKey = GlobalKey();
-  VideoResolution _selectedRes = VideoResolution.hd720;
-  VideoOrientation _selectedOrient = VideoOrientation.portrait;
   CameraFacing _currentFacing = CameraFacing.back;
   bool _muted = false;
   bool _streaming = false;
@@ -46,8 +44,6 @@ class _CameraScreenState extends State<CameraScreen> {
       switch (s.type) {
         case RtmpStatusType.connected:
           _streaming = true;
-          // Scoreband widget rebuilds with Opacity(1.0) on this setState.
-          // Push after the next frame so the capture is non-transparent.
           WidgetsBinding.instance.addPostFrameCallback((_) => _pushScoreband());
         case RtmpStatusType.disconnected:
           _streaming = false;
@@ -77,8 +73,19 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> _toggleMute() async {
-    _muted = !_muted;
+    setState(() => _muted = !_muted);
     await widget.controller.setAudioMuted(_muted);
+  }
+
+  Future<void> _goBack() async {
+    _scoreTimer?.cancel();
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    widget.controller.dispose();
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   Future<void> _pushScoreband() async {
@@ -112,22 +119,6 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
-  void _showSettingsModal() {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => SettingsSheet(
-        selectedRes: _selectedRes,
-        selectedOrient: _selectedOrient,
-        onResChanged: (v) => setState(() => _selectedRes = v),
-        onOrientChanged: (v) async {
-          await widget.controller.setAppOrientation(v);
-          if (!mounted) return;
-          setState(() => _selectedOrient = v);
-        },
-      ),
-    );
-  }
-
   void _startScorebandTimer() {
     _scoreTimer?.cancel();
     _scoreTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -154,52 +145,58 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned.fill(
-            child: RtmpBroadcastWidget(),
-          ),
+    return PopScope(
+      canPop: !_streaming,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            const Positioned.fill(
+              child: RtmpBroadcastWidget(),
+            ),
 
-          if (!_streaming)
+            // Back button — only when not streaming
+            if (!_streaming)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 16,
+                left: 16,
+                child: FloatingActionButton.small(
+                  heroTag: 'back',
+                  onPressed: _goBack,
+                  backgroundColor: Colors.black54,
+                  child: const Icon(Icons.arrow_back, color: Colors.white),
+                ),
+              ),
+
             Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
+              bottom: _streaming ? -10000 : 100,
+              left: 16,
               right: 16,
-              child: FloatingActionButton.small(
-                heroTag: 'settings',
-                onPressed: _showSettingsModal,
-                child: const Icon(Icons.settings),
+              child: ScorebandWidget(
+                repaintBoundaryKey: _scoreBandKey,
+                homeTeam: _homeTeam,
+                awayTeam: _awayTeam,
+                homeScore: _homeScore,
+                awayScore: _awayScore,
+                matchTime: _matchTime,
+                streaming: _streaming,
               ),
             ),
 
-          Positioned(
-            bottom: _streaming ? -10000 : 100,
-            left: 16,
-            right: 16,
-            child: ScorebandWidget(
-              repaintBoundaryKey: _scoreBandKey,
-              homeTeam: _homeTeam,
-              awayTeam: _awayTeam,
-              homeScore: _homeScore,
-              awayScore: _awayScore,
-              matchTime: _matchTime,
-              streaming: _streaming,
+            Positioned(
+              bottom: 32,
+              left: 16,
+              right: 16,
+              child: CameraControlsBar(
+                streaming: _streaming,
+                muted: _muted,
+                currentFacing: _currentFacing,
+                onFlip: _flipCamera,
+                onToggleStream: _toggleStream,
+                onToggleMute: _toggleMute,
+              ),
             ),
-          ),
-
-          Positioned(
-            bottom: 32,
-            left: 16,
-            right: 16,
-            child: CameraControlsBar(
-              streaming: _streaming,
-              muted: _muted,
-              onFlip: _flipCamera,
-              onToggleStream: _toggleStream,
-              onToggleMute: _toggleMute,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

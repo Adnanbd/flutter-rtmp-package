@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
 
 class CameraControlsBar extends StatelessWidget {
   const CameraControlsBar({
     super.key,
     required this.streaming,
     required this.muted,
+    required this.currentFacing,
     required this.onFlip,
     required this.onToggleStream,
     required this.onToggleMute,
@@ -12,31 +14,69 @@ class CameraControlsBar extends StatelessWidget {
 
   final bool streaming;
   final bool muted;
+  final CameraFacing currentFacing;
   final VoidCallback onFlip;
   final VoidCallback onToggleStream;
   final VoidCallback onToggleMute;
+
+  Widget _fab({
+    required String heroTag,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FloatingActionButton(
+          heroTag: heroTag,
+          onPressed: onPressed,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          child: Icon(icon),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        FloatingActionButton(
+        _fab(
           heroTag: 'flip',
+          icon: Icons.flip_camera_android,
+          label: currentFacing == CameraFacing.front ? 'Front' : 'Back',
           onPressed: onFlip,
-          child: const Icon(Icons.flip_camera_android),
         ),
-        FloatingActionButton(
+        _fab(
           heroTag: 'stream',
-          backgroundColor: streaming ? Colors.red : Colors.green,
+          icon: streaming ? Icons.stop : Icons.play_arrow,
+          label: streaming ? 'Stop' : 'Go Live',
           onPressed: onToggleStream,
-          child: Icon(streaming ? Icons.stop : Icons.play_arrow),
+          backgroundColor: streaming ? Colors.red : Colors.green,
+          foregroundColor: Colors.white,
         ),
-        FloatingActionButton(
+        _fab(
           heroTag: 'mute',
-          backgroundColor: muted ? Colors.orange : Colors.blue,
+          icon: muted ? Icons.mic_off : Icons.mic,
+          label: muted ? 'Mic Off' : 'Mic On',
           onPressed: onToggleMute,
-          child: Icon(muted ? Icons.mic_off : Icons.mic),
+          backgroundColor: muted ? Colors.orange : Colors.blue,
+          foregroundColor: Colors.white,
         ),
       ],
     );

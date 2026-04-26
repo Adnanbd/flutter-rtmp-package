@@ -39,9 +39,10 @@ class OverlayFilterManager(
                 Log.w(TAG, "Failed to decode sponsor bitmap — layer skipped")
                 continue
             }
+            val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
             val filter = ImageObjectFilterRender()
             filter.setImage(orientBitmap(bitmap))
-            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
+            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
@@ -120,9 +121,10 @@ class OverlayFilterManager(
                 Log.w(TAG, "Failed to decode sponsor bitmap — layer skipped")
                 continue
             }
+            val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
             val filter = ImageObjectFilterRender()
             filter.setImage(orientBitmap(bitmap))
-            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, sponsor.height)
+            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
         }
@@ -133,6 +135,16 @@ class OverlayFilterManager(
         sponsorFilters.clear()
         scorebandFilter = null
         streamRef = null
+    }
+
+    // Compute aspect-ratio-correct normalized height in post-rotation space.
+    // Uses ORIGINAL (pre-orientBitmap) bitmap dimensions so the aspect ratio
+    // reflects how the image should appear in the final stream output frame.
+    private fun aspectCorrectHeight(bitmap: Bitmap, normalizedWidth: Float): Float {
+        val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+        val pixelW = normalizedWidth * streamWidth
+        val pixelH = pixelW / aspect
+        return (pixelH / streamHeight).coerceAtMost(1f)
     }
 
     // Counter-rotates bitmap 90° CW so it appears upright after the frame's 90° CCW rotation.
