@@ -63,6 +63,7 @@ android {
 
 dependencies {
     implementation 'com.github.pedroSG94.RootEncoder:library:2.7.2'
+    implementation 'com.github.jiangdongguo.AndroidUSBCamera:libuvc:3.2.0'
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

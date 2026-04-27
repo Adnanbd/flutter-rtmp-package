@@ -5,6 +5,7 @@ import android.content.Context
 import com.flutterrtmp.broadcaster.camera.CameraPreviewFactory
 import com.flutterrtmp.broadcaster.camera.CameraStreamManager
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
+import com.flutterrtmp.broadcaster.usb.UsbDeviceRegistry
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -25,6 +26,7 @@ class FlutterRtmpBroadcasterPlugin :
     private var activity: Activity? = null
     private var cameraStreamManager: CameraStreamManager? = null
     private var eventSink: EventChannel.EventSink? = null
+    private var usbDeviceRegistry: UsbDeviceRegistry? = null
 
     companion object {
         private const val METHOD_CHANNEL = "flutter_rtmp_broadcaster/control"
@@ -34,6 +36,10 @@ class FlutterRtmpBroadcasterPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
+
+        usbDeviceRegistry = UsbDeviceRegistry(binding.applicationContext) { deviceId ->
+            eventSink?.success(mapOf("type" to "usbDetached", "deviceId" to deviceId))
+        }.also { it.register() }
 
         methodChannel = MethodChannel(binding.binaryMessenger, METHOD_CHANNEL)
         methodChannel.setMethodCallHandler(this)
@@ -67,6 +73,9 @@ class FlutterRtmpBroadcasterPlugin :
             "switchCamera" -> handleSwitchCamera(call, result)
             "setAudioMute" -> handleSetAudioMute(call, result)
             "setAppOrientation" -> handleSetAppOrientation(call, result)
+            "listUsbVideoDevices" -> handleListUsbVideoDevices(result)
+            "listUsbAudioDevices" -> handleListUsbAudioDevices(result)
+            "requestUsbPermission" -> handleRequestUsbPermission(call, result)
             else -> result.notImplemented()
         }
     }
@@ -97,10 +106,18 @@ class FlutterRtmpBroadcasterPlugin :
             return
         }
 
+        val videoInput = call.argument<String>("videoInput") ?: "device"
+        val usbVideoDeviceId = call.argument<Int>("usbVideoDeviceId")
+        val audioInput = call.argument<String>("audioInput") ?: "mic"
+        val usbAudioDeviceId = call.argument<Int>("usbAudioDeviceId")
+
         cameraStreamManager?.release()
         try {
-            cameraStreamManager = CameraStreamManager(ctx, act).also { manager ->
-                manager.initPreviewOnly(width, height, fps, orientation, initialFacing)
+            cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
+                manager.initPreviewOnly(
+                    width, height, fps, orientation, initialFacing,
+                    videoInput, usbVideoDeviceId, audioInput, usbAudioDeviceId
+                )
                 eventSink?.let { manager.setSink(it) }
             }
             result.success(null)
@@ -130,6 +147,10 @@ class FlutterRtmpBroadcasterPlugin :
         val keyframeIntervalSeconds = call.argument<Int>("keyframeIntervalSeconds") ?: 2
         val orientation = call.argument<String>("orientation") ?: "landscape"
         val initialFacing = call.argument<String>("initialFacing") ?: "back"
+        val videoInput = call.argument<String>("videoInput") ?: "device"
+        val usbVideoDeviceId = call.argument<Int>("usbVideoDeviceId")
+        val audioInput = call.argument<String>("audioInput") ?: "mic"
+        val usbAudioDeviceId = call.argument<Int>("usbAudioDeviceId")
 
         val act = activity
         if (act == null) {
@@ -139,11 +160,12 @@ class FlutterRtmpBroadcasterPlugin :
 
         cameraStreamManager?.release()
         try {
-            cameraStreamManager = CameraStreamManager(ctx, act).also { manager ->
+            cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
                 manager.configure(
                     rtmpEndpoint, sponsors,
                     width, height, fps, videoBitrate, keyframeIntervalSeconds,
-                    orientation, initialFacing
+                    orientation, initialFacing, videoInput, usbVideoDeviceId,
+                    audioInput, usbAudioDeviceId
                 )
                 eventSink?.let { manager.setSink(it) }
             }
@@ -206,11 +228,45 @@ class FlutterRtmpBroadcasterPlugin :
         result.success(null)
     }
 
+    private fun handleListUsbVideoDevices(result: Result) {
+        val registry = usbDeviceRegistry
+        if (registry == null) {
+            result.success(emptyList<Any>())
+            return
+        }
+        result.success(registry.listUvcDevices())
+    }
+
+    private fun handleListUsbAudioDevices(result: Result) {
+        val registry = usbDeviceRegistry
+        if (registry == null) {
+            result.success(emptyList<Any>())
+            return
+        }
+        result.success(registry.listUacDevices())
+    }
+
+    private fun handleRequestUsbPermission(call: MethodCall, result: Result) {
+        val deviceId = call.argument<Int>("deviceId") ?: run {
+            result.error("INVALID_ARGS", "deviceId is required", null)
+            return
+        }
+        val registry = usbDeviceRegistry ?: run {
+            result.success(false)
+            return
+        }
+        registry.requestPermission(deviceId) { granted ->
+            result.success(granted)
+        }
+    }
+
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         cameraStreamManager?.release()
         cameraStreamManager = null
+        usbDeviceRegistry?.destroy()
+        usbDeviceRegistry = null
         eventSink = null
         context = null
     }

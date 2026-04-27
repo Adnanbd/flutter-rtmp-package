@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- UVC Video Class (IAD composite device) -->
+    <usb-device class="239" subclass="2" />
+    <!-- UVC Video Class (pure video class) -->
+    <usb-device class="14" />
+    <!-- UAC Audio Class -->
+    <usb-device class="1" />
+</resources>

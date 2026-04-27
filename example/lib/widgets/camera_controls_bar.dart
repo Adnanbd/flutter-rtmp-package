@@ -10,6 +10,7 @@ class CameraControlsBar extends StatelessWidget {
     required this.onFlip,
     required this.onToggleStream,
     required this.onToggleMute,
+    this.flipEnabled = true,
   });
 
   final bool streaming;
@@ -18,6 +19,7 @@ class CameraControlsBar extends StatelessWidget {
   final VoidCallback onFlip;
   final VoidCallback onToggleStream;
   final VoidCallback onToggleMute;
+  final bool flipEnabled;
 
   Widget _fab({
     required String heroTag,
@@ -59,8 +61,12 @@ class CameraControlsBar extends StatelessWidget {
         _fab(
           heroTag: 'flip',
           icon: Icons.flip_camera_android,
-          label: currentFacing == CameraFacing.front ? 'Front' : 'Back',
-          onPressed: onFlip,
+          label: flipEnabled
+              ? (currentFacing == CameraFacing.front ? 'Front' : 'Back')
+              : 'USB Cam',
+          onPressed: flipEnabled ? onFlip : () {},
+          backgroundColor: flipEnabled ? null : Colors.grey.shade700,
+          foregroundColor: flipEnabled ? null : Colors.grey,
         ),
         _fab(
           heroTag: 'stream',

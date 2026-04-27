@@ -9,13 +9,20 @@ import android.view.TextureView
 import com.flutterrtmp.broadcaster.overlay.OverlayFilterManager
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
 import com.flutterrtmp.broadcaster.rtmp.RtmpConnectChecker
+import com.flutterrtmp.broadcaster.usb.UsbAudioSource
+import com.flutterrtmp.broadcaster.usb.UsbDeviceRegistry
+import com.flutterrtmp.broadcaster.usb.UvcVideoSource
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
 import com.pedro.encoder.input.video.CameraHelper
 import com.pedro.library.generic.GenericStream
 import io.flutter.plugin.common.EventChannel
 
-class CameraStreamManager(private val context: Context, private val activity: android.app.Activity) {
+class CameraStreamManager(
+    private val context: Context,
+    private val activity: android.app.Activity,
+    val usbDeviceRegistry: UsbDeviceRegistry? = null
+) {
 
     companion object {
         private const val TAG = "CameraStreamManager"
@@ -57,7 +64,17 @@ class CameraStreamManager(private val context: Context, private val activity: an
         connectChecker.sink = sink
     }
 
-    fun initPreviewOnly(width: Int, height: Int, fps: Int, orientation: String, initialFacing: String) {
+    fun initPreviewOnly(
+        width: Int,
+        height: Int,
+        fps: Int,
+        orientation: String,
+        initialFacing: String,
+        videoInput: String = "device",
+        usbVideoDeviceId: Int? = null,
+        audioInput: String = "mic",
+        usbAudioDeviceId: Int? = null
+    ) {
         if (isPreviewReady) return
 
         encWidth = width
@@ -70,12 +87,24 @@ class CameraStreamManager(private val context: Context, private val activity: an
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
 
+        if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
+            val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
+            genericStream.changeVideoSource(uvcSource)
+            Log.d(TAG, "initPreviewOnly: switched to UVC source device=$usbVideoDeviceId")
+        }
+
+        if (audioInput == "usb") {
+            val usbAudio = UsbAudioSource(context, usbAudioDeviceId)
+            genericStream.changeAudioSource(usbAudio)
+            Log.d(TAG, "initPreviewOnly: switched to USB audio device=$usbAudioDeviceId")
+        }
+
         configureGlForOrientation(orientation)
 
         overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
         overlayFilterManager?.initLayers(genericStream, emptyList())
 
-        switchCamera(initialFacing)
+        if (videoInput != "usb") switchCamera(initialFacing)
 
         isPreviewReady = true
     }
@@ -90,7 +119,11 @@ class CameraStreamManager(private val context: Context, private val activity: an
         videoBitrate: Int,
         keyframeIntervalSeconds: Int,
         orientation: String,
-        initialFacing: String
+        initialFacing: String,
+        videoInput: String = "device",
+        usbVideoDeviceId: Int? = null,
+        audioInput: String = "mic",
+        usbAudioDeviceId: Int? = null
     ) {
         this.rtmpEndpoint = rtmpEndpoint
         this.lastSponsors = sponsors
@@ -106,6 +139,18 @@ class CameraStreamManager(private val context: Context, private val activity: an
                 throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
             }
 
+            if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
+                val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
+                genericStream.changeVideoSource(uvcSource)
+                Log.d(TAG, "configure: switched to UVC source device=$usbVideoDeviceId")
+            }
+
+            if (audioInput == "usb") {
+                val usbAudio = UsbAudioSource(context, usbAudioDeviceId)
+                genericStream.changeAudioSource(usbAudio)
+                Log.d(TAG, "configure: switched to USB audio device=$usbAudioDeviceId")
+            }
+
             this.encWidth = width
             this.encHeight = height
 
@@ -116,13 +161,13 @@ class CameraStreamManager(private val context: Context, private val activity: an
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
-            switchCamera(initialFacing)
+            if (videoInput != "usb") switchCamera(initialFacing)
 
             isPreviewReady = true
         } else {
             // Same dims — refresh sponsors only; scoreband filter already exists from initPreview.
             overlayFilterManager?.updateSponsors(genericStream, sponsors)
-            switchCamera(initialFacing)
+            if (videoInput != "usb") switchCamera(initialFacing)
         }
 
         isConfigured = true
@@ -182,8 +227,8 @@ class CameraStreamManager(private val context: Context, private val activity: an
     }
 
     fun switchCamera(facing: String) {
+        val source = genericStream.videoSource as? Camera2Source ?: return  // no-op for UVC/non-Camera2 sources
         val desiredFront = facing == "front"
-        val source = genericStream.videoSource as? Camera2Source ?: return
         val currentFront = source.getCameraFacing() == CameraHelper.Facing.FRONT
         if (desiredFront != currentFront) {
             source.switchCamera()
@@ -191,8 +236,10 @@ class CameraStreamManager(private val context: Context, private val activity: an
     }
 
     fun setAudioMuted(muted: Boolean) {
-        val source = genericStream.audioSource as? MicrophoneSource ?: return
-        if (muted) source.mute() else source.unMute()
+        when (val source = genericStream.audioSource) {
+            is MicrophoneSource -> if (muted) source.mute() else source.unMute()
+            is UsbAudioSource -> if (muted) source.mute() else source.unMute()
+        }
     }
 
     fun setAppOrientation(orientation: String) {

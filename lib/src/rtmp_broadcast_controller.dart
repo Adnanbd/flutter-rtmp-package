@@ -6,6 +6,7 @@ import 'models/rtmp_broadcaster_exception.dart';
 import 'models/rtmp_status.dart';
 import 'models/sponsor_overlay.dart';
 import 'models/stream_config.dart';
+import 'models/usb_device_info.dart';
 
 class RtmpBroadcastController {
   RtmpBroadcastController()
@@ -108,6 +109,32 @@ class RtmpBroadcastController {
   Future<void> setAppOrientation(VideoOrientation orientation) async {
     try {
       await _method.setAppOrientation(orientation.name);
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<List<UsbDeviceInfo>> listUsbVideoDevices() async {
+    try {
+      final raw = await _method.listUsbVideoDevices();
+      return raw.map(UsbDeviceInfo.fromMap).toList();
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<List<UsbAudioDeviceInfo>> listUsbAudioDevices() async {
+    try {
+      final raw = await _method.listUsbAudioDevices();
+      return raw.map(UsbAudioDeviceInfo.fromMap).toList();
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  Future<bool> requestUsbPermission(int deviceId) async {
+    try {
+      return await _method.requestUsbPermission(deviceId);
     } on PlatformException catch (e) {
       throw RtmpBroadcasterException(e.code, e.message ?? '');
     }

@@ -29,4 +29,20 @@ class MethodChannelBridge {
 
   Future<void> setAppOrientation(String orientation) =>
       _channel.invokeMethod('setAppOrientation', {'orientation': orientation});
+
+  Future<List<Map<Object?, Object?>>> listUsbVideoDevices() async {
+    final raw = await _channel.invokeListMethod<Map<Object?, Object?>>('listUsbVideoDevices');
+    return raw ?? [];
+  }
+
+  Future<List<Map<Object?, Object?>>> listUsbAudioDevices() async {
+    final raw = await _channel.invokeListMethod<Map<Object?, Object?>>('listUsbAudioDevices');
+    return raw ?? [];
+  }
+
+  Future<bool> requestUsbPermission(int deviceId) async {
+    final result = await _channel.invokeMethod<bool>(
+        'requestUsbPermission', {'deviceId': deviceId});
+    return result ?? false;
+  }
 }

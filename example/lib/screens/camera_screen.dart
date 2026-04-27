@@ -195,6 +195,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 onFlip: _flipCamera,
                 onToggleStream: _toggleStream,
                 onToggleMute: _toggleMute,
+                flipEnabled: widget.controller.config.videoInput == VideoInput.device,
               ),
             ),
           ],

@@ -87,7 +87,30 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:pedrosg94.github.io)",
       "WebFetch(domain:api.github.com)",
-      "WebFetch(domain:jitpack.io)"
+      "WebFetch(domain:jitpack.io)",
+      "Bash(curl -s \"https://jitpack.io/api/builds/com.github.saki4510t/UVCCamera\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"https://jitpack.io/api/builds/com.github.saki4510t/UVCCamera/latest\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('version',''\\), d.get\\('status',''\\)\\)\")",
+      "Bash(curl -s \"https://api.github.com/repos/saki4510t/UVCCamera/tags\")",
+      "Bash(python3 -c \"import json,sys; tags=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in tags[:10]]\")",
+      "Bash(curl -s \"https://jitpack.io/com/github/saki4510t/UVCCamera/maven-metadata.xml\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://jitpack.io/com/github/saki4510t/UVCCamera/3.0.2/UVCCamera-3.0.2.pom\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://jitpack.io/__TRACKED_VAR__)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://jitpack.io/com/github/jiangdongguo/AndroidUSBCamera/libuvc/3.3.3/libuvc-3.3.3.pom\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://jitpack.io/com/github/jiangdongguo/AndroidUSBCamera/libuvc/3.3.3/libuvc-3.3.3.aar\")",
+      "Bash(cp ~/.gradle/caches/modules-2/files-2.1/com.github.jiangdongguo.AndroidUSBCamera/libuvc/3.2.0/abf00ed47156ed377a142297f92ac62caaf8a708/libuvc-3.2.0.aar .)",
+      "Bash(unzip -o libuvc-3.2.0.aar classes.jar -d libuvc_out)",
+      "Bash(grep -v \"/$\")",
+      "Bash(jar -xf classes.jar com/serenegiant/usb/UVCCamera.class)",
+      "Bash(jar -xf classes.jar com/serenegiant/usb/USBMonitor.class)",
+      "Bash(cp ~/.gradle/caches/modules-2/files-2.1/com.github.pedroSG94.RootEncoder/library/2.7.2/29c63816d9a815c3572ae9ece86b7986406200f/library-2.7.2.aar .)",
+      "Bash(unzip -o library-2.7.2.aar classes.jar -d rootencoder_out)",
+      "Bash(jar -xf rootencoder_out/classes.jar com/pedro/encoder/input/sources/video/VideoSource.class)",
+      "Bash(javap com/pedro/encoder/input/sources/video/VideoSource.class)",
+      "Bash(jar -xf classes.jar)",
+      "Bash(jar -xf rootencoder_out/classes.jar \"com/pedro/encoder/input/sources/video/VideoSource.class\")",
+      "Bash(jar xf *)"
     ]
   }
 }

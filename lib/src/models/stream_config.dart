@@ -4,6 +4,10 @@ enum VideoOrientation { portrait, landscape }
 
 enum CameraFacing { front, back }
 
+enum VideoInput { device, usb }
+
+enum AudioInput { mic, usb }
+
 class StreamConfig {
   const StreamConfig({
     required this.width,
@@ -13,6 +17,10 @@ class StreamConfig {
     required this.keyframeIntervalSeconds,
     required this.orientation,
     required this.initialFacing,
+    this.videoInput = VideoInput.device,
+    this.audioInput = AudioInput.mic,
+    this.usbVideoDeviceId,
+    this.usbAudioDeviceId,
   });
 
   final int width;
@@ -22,6 +30,10 @@ class StreamConfig {
   final int keyframeIntervalSeconds;
   final VideoOrientation orientation;
   final CameraFacing initialFacing;
+  final VideoInput videoInput;
+  final AudioInput audioInput;
+  final int? usbVideoDeviceId;
+  final int? usbAudioDeviceId;
 
   static const StreamConfig youtube720Landscape = StreamConfig(
     width: 1280,
@@ -73,5 +85,9 @@ class StreamConfig {
         'keyframeIntervalSeconds': keyframeIntervalSeconds,
         'orientation': orientation.name,
         'initialFacing': initialFacing.name,
+        'videoInput': videoInput.name,
+        'audioInput': audioInput.name,
+        if (usbVideoDeviceId != null) 'usbVideoDeviceId': usbVideoDeviceId,
+        if (usbAudioDeviceId != null) 'usbAudioDeviceId': usbAudioDeviceId,
       };
 }
