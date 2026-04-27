@@ -250,7 +250,11 @@ In `CameraStreamManager.kt`, the `configureGlForOrientation()` function handles 
 
 ## Claude Code Behavior Notes
 
-- **Always update `PROJECT.md`** after adding, modifying, or completing any feature, task, or subtask. Mark checkboxes, update progress, add new entries. This file serves as the authoritative context tracker for all development work.
+- **Always update the relevant PROJECT file** after adding, modifying, or completing any feature, task, or subtask. Mark checkboxes, update progress, add new entries. Three files serve as the authoritative context tracker:
+  - `PROJECT.md` — shared milestones (M1, M8–M10), dependency summary, key decisions
+  - `PROJECT-android.md` — Android milestones (M2–M4) and Android technical notes
+  - `PROJECT-ios.md` — iOS milestones (M5–M7)
+- **Always update `README.md`** when any of the following change: public Dart API (new methods, changed signatures, new models/enums), Android/iOS setup steps, channel method names, error codes, overlay coordinate behavior, orientation handling, or known limitations. The README is the developer-facing contract for the package.
 - Write **Kotlin** for Android (not Java), **Swift** for iOS (not Objective-C).
 - Never use `dart:mirrors`.
 - All `MethodChannel` calls from Dart use `invokeMethod` — never `invokeMapMethod` directly.
