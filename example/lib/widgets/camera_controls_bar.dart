@@ -11,6 +11,7 @@ class CameraControlsBar extends StatelessWidget {
     required this.onToggleStream,
     required this.onToggleMute,
     this.flipEnabled = true,
+    this.streamEnabled = true,
   });
 
   final bool streaming;
@@ -20,6 +21,7 @@ class CameraControlsBar extends StatelessWidget {
   final VoidCallback onToggleStream;
   final VoidCallback onToggleMute;
   final bool flipEnabled;
+  final bool streamEnabled;
 
   Widget _fab({
     required String heroTag,
@@ -71,9 +73,9 @@ class CameraControlsBar extends StatelessWidget {
         _fab(
           heroTag: 'stream',
           icon: streaming ? Icons.stop : Icons.play_arrow,
-          label: streaming ? 'Stop' : 'Go Live',
-          onPressed: onToggleStream,
-          backgroundColor: streaming ? Colors.red : Colors.green,
+          label: streaming ? 'Stop' : (streamEnabled ? 'Go Live' : 'Starting…'),
+          onPressed: streamEnabled ? onToggleStream : () {},
+          backgroundColor: streaming ? Colors.red : (streamEnabled ? Colors.green : Colors.grey.shade700),
           foregroundColor: Colors.white,
         ),
         _fab(

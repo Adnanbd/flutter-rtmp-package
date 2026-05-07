@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import com.flutterrtmp.broadcaster.camera.CameraPreviewFactory
 import com.flutterrtmp.broadcaster.camera.CameraStreamManager
+import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
 import com.flutterrtmp.broadcaster.usb.UsbDeviceRegistry
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -36,6 +37,8 @@ class FlutterRtmpBroadcasterPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
+        DiagLogger.init(binding.applicationContext)
+        DiagLogger.installUncaughtHandler()
 
         usbDeviceRegistry = UsbDeviceRegistry(binding.applicationContext) { deviceId ->
             eventSink?.success(mapOf("type" to "usbDetached", "deviceId" to deviceId))
@@ -76,6 +79,8 @@ class FlutterRtmpBroadcasterPlugin :
             "listUsbVideoDevices" -> handleListUsbVideoDevices(result)
             "listUsbAudioDevices" -> handleListUsbAudioDevices(result)
             "requestUsbPermission" -> handleRequestUsbPermission(call, result)
+            "exportDiagnostics" -> result.success(DiagLogger.read())
+            "clearDiagnostics" -> { DiagLogger.clear(); result.success(null) }
             else -> result.notImplemented()
         }
     }
@@ -158,7 +163,28 @@ class FlutterRtmpBroadcasterPlugin :
             return
         }
 
+        val existing = cameraStreamManager
+        if (existing != null && existing.previewReady) {
+            // initPreview already set up the pipeline — just apply endpoint + sponsors
+            DiagLogger.log("PLUGIN", "handleConfigure: reusing existing manager (previewReady=true)")
+            try {
+                existing.configure(
+                    rtmpEndpoint, sponsors,
+                    width, height, fps, videoBitrate, keyframeIntervalSeconds,
+                    orientation, initialFacing, videoInput, usbVideoDeviceId,
+                    audioInput, usbAudioDeviceId
+                )
+                eventSink?.let { existing.setSink(it) }
+                result.success(null)
+            } catch (e: Exception) {
+                DiagLogger.logError("CONFIGURE_ERROR", e.message ?: "Configure failed", e)
+                result.error("CONFIGURE_ERROR", e.message ?: "Configure failed", null)
+            }
+            return
+        }
+
         cameraStreamManager?.release()
+        DiagLogger.log("PLUGIN", "handleConfigure: fresh manager (no prior initPreview)")
         try {
             cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
                 manager.configure(
@@ -171,6 +197,7 @@ class FlutterRtmpBroadcasterPlugin :
             }
             result.success(null)
         } catch (e: Exception) {
+            DiagLogger.logError("CONFIGURE_ERROR", e.message ?: "Configure failed", e)
             cameraStreamManager = null
             result.error("CONFIGURE_ERROR", e.message ?: "Configure failed", null)
         }
@@ -186,10 +213,13 @@ class FlutterRtmpBroadcasterPlugin :
             return
         }
         try {
+            DiagLogger.log("PLUGIN", "handleStartStream: videoSrc=${manager.videoSourceClassName} " +
+                "onPreview=${manager.genericStream.isOnPreview} previewReady=${manager.previewReady}")
             manager.startStream()
             result.success(null)
-        } catch (e: Exception) {
-            result.error("STREAM_ERROR", e.message ?: "Failed to start stream", null)
+        } catch (t: Throwable) {
+            DiagLogger.logError("STREAM_ERROR", t.message ?: "Failed to start stream", t)
+            result.error("STREAM_ERROR", t.message ?: "Failed to start stream", null)
         }
     }
 

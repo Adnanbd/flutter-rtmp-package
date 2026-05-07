@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
 import 'package:image_picker/image_picker.dart';
 import 'camera_screen.dart';
@@ -151,6 +152,8 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CameraScreen(controller: controller)));
     } on RtmpBroadcasterException catch (e) {
       _showSnack('Failed: ${e.code} — ${e.message}');
+    } catch (e) {
+      _showSnack('Unexpected error: $e');
     } finally {
       if (mounted) setState(() => _connecting = false);
     }
@@ -342,10 +345,51 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
     );
   }
 
+  Future<void> _showDiagnostics() async {
+    final log = await _controller.exportDiagnostics();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Diagnostics'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(log, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: log));
+              Navigator.of(context).pop();
+              _showSnack('Copied to clipboard');
+            },
+            child: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('RTMP Configuration')),
+      appBar: AppBar(
+        title: const Text('RTMP Configuration'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'Diagnostics',
+            onPressed: _showDiagnostics,
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -380,28 +424,45 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
             const SizedBox(height: 24),
             const Text('Stream Settings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
+            _buildDropdownRow('Video Input', [
+              DropdownMenuItem(value: VideoInput.device, child: const Text('Device Camera')),
+              DropdownMenuItem(value: VideoInput.usb, child: const Text('USB / HDMI Capture')),
+            ], _selectedVideoInput, (v) {
+              if (v == null) return;
+              setState(() {
+                _selectedVideoInput = v;
+                if (v == VideoInput.usb) {
+                  _selectedOrient = VideoOrientation.landscape;
+                  _loadUsbDevices();
+                }
+              });
+            }),
+            _buildUsbVideoSection(),
+            const SizedBox(height: 12),
             _buildDropdownRow('Resolution', [
               DropdownMenuItem(value: VideoResolution.hd720, child: const Text('720p')),
               DropdownMenuItem(value: VideoResolution.fhd1080, child: const Text('1080p')),
             ], _selectedRes, (v) { if (v != null) setState(() => _selectedRes = v); }),
             const SizedBox(height: 12),
             _buildDropdownRow('Orientation', [
-              DropdownMenuItem(value: VideoOrientation.portrait, child: const Text('Portrait')),
-              DropdownMenuItem(value: VideoOrientation.landscape, child: const Text('Landscape')),
+              DropdownMenuItem(
+                value: VideoOrientation.portrait,
+                enabled: _selectedVideoInput != VideoInput.usb,
+                child: const Text('Portrait'),
+              ),
+              const DropdownMenuItem(
+                value: VideoOrientation.landscape,
+                child: Text('Landscape'),
+              ),
             ], _selectedOrient, (v) { if (v != null) setState(() => _selectedOrient = v); }),
-            const SizedBox(height: 12),
-            _buildDropdownRow('Video Input', [
-              DropdownMenuItem(value: VideoInput.device, child: const Text('Device Camera')),
-              DropdownMenuItem(value: VideoInput.usb, child: const Text('USB / HDMI Capture')),
-            ], _selectedVideoInput, (v) {
-              if (v != null) {
-                setState(() {
-                  _selectedVideoInput = v;
-                  if (v == VideoInput.usb) _loadUsbDevices();
-                });
-              }
-            }),
-            _buildUsbVideoSection(),
+            if (_selectedVideoInput == VideoInput.usb)
+              const Padding(
+                padding: EdgeInsets.only(top: 4, left: 100),
+                child: Text(
+                  'Portrait not supported with USB / HDMI capture',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
             const SizedBox(height: 12),
             _buildDropdownRow('Audio Input', [
               DropdownMenuItem(value: AudioInput.mic, child: const Text('Phone Microphone')),
@@ -454,7 +515,8 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
         SizedBox(width: 100, child: Text(label)),
         Expanded(
           child: DropdownButtonFormField<T>(
-            value: value,
+            key: ValueKey('$label:$value'),
+            initialValue: value,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: items,
             onChanged: onChanged,

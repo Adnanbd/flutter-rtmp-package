@@ -33,11 +33,18 @@ class _CameraScreenState extends State<CameraScreen> {
   int _homeScore = 0;
   int _awayScore = 0;
   int _matchTime = 0;
+  bool _previewBound = false;
 
   @override
   void initState() {
     super.initState();
     _statusSub = widget.controller.statusStream.listen(_onStatus);
+    widget.controller.previewBound.addListener(_onPreviewBoundChanged);
+    _previewBound = widget.controller.previewBound.value;
+  }
+
+  void _onPreviewBoundChanged() {
+    if (mounted) setState(() => _previewBound = widget.controller.previewBound.value);
   }
 
   void _onStatus(RtmpStatus s) {
@@ -49,9 +56,11 @@ class _CameraScreenState extends State<CameraScreen> {
         case RtmpStatusType.disconnected:
           _streaming = false;
         case RtmpStatusType.error:
-          _showSnack('Error: ${s.errorCode}');
+          _showSnack('Error: ${s.errorCode} — ${s.errorMessage}');
         case RtmpStatusType.bitrate:
         case RtmpStatusType.reconnecting:
+        case RtmpStatusType.previewBound:
+        case RtmpStatusType.usbDetached:
           break;
       }
     });
@@ -138,6 +147,7 @@ class _CameraScreenState extends State<CameraScreen> {
   void dispose() {
     _scoreTimer?.cancel();
     _statusSub?.cancel();
+    widget.controller.previewBound.removeListener(_onPreviewBoundChanged);
     super.dispose();
   }
 
@@ -196,6 +206,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 onToggleStream: _toggleStream,
                 onToggleMute: _toggleMute,
                 flipEnabled: widget.controller.config.videoInput == VideoInput.device,
+                streamEnabled: _previewBound || _streaming,
               ),
             ),
           ],

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'channels/event_channel_bridge.dart';
@@ -16,12 +17,21 @@ class RtmpBroadcastController {
   final MethodChannelBridge _method;
   final EventChannelBridge _event;
 
+  final previewBound = ValueNotifier<bool>(false);
+
   StreamConfig? _config;
   StreamConfig get config => _config!;
 
-  Stream<RtmpStatus> get statusStream => _event.statusStream;
+  Stream<RtmpStatus> get statusStream => _event.statusStream.where((s) {
+        if (s.type == RtmpStatusType.previewBound) {
+          previewBound.value = true;
+          return false;
+        }
+        return true;
+      });
 
   Future<void> initPreview({StreamConfig? config}) async {
+    previewBound.value = false;
     final cfg = config ?? StreamConfig.defaultConfig;
     try {
       await _method.initPreview({
@@ -140,5 +150,17 @@ class RtmpBroadcastController {
     }
   }
 
-  void dispose() {}
+  Future<String> exportDiagnostics() async {
+    try {
+      return await _method.exportDiagnostics();
+    } on PlatformException catch (e) {
+      return 'Error reading diagnostics: ${e.message}';
+    }
+  }
+
+  Future<void> clearDiagnostics() => _method.clearDiagnostics();
+
+  void dispose() {
+    previewBound.dispose();
+  }
 }

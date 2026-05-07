@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.TextureView
+import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.flutterrtmp.broadcaster.overlay.OverlayFilterManager
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
 import com.flutterrtmp.broadcaster.rtmp.RtmpConnectChecker
@@ -49,6 +50,7 @@ class CameraStreamManager(
 
     private var encWidth = 0
     private var encHeight = 0
+    private var currentIsPortrait: Boolean = true
     private var lastScorebandBytes: ByteArray? = null
     private var lastSponsors: List<SponsorConfig> = emptyList()
     var rtmpEndpoint: String = ""
@@ -59,6 +61,8 @@ class CameraStreamManager(
     private var reconnectAttempt = 0
 
     val isStreaming: Boolean get() = isConfigured && genericStream.isStreaming
+    val previewReady: Boolean get() = isPreviewReady
+    val videoSourceClassName: String get() = genericStream.videoSource?.javaClass?.simpleName ?: "null"
 
     fun setSink(sink: EventChannel.EventSink?) {
         connectChecker.sink = sink
@@ -87,10 +91,16 @@ class CameraStreamManager(
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
 
-        if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
-            val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
-            genericStream.changeVideoSource(uvcSource)
-            Log.d(TAG, "initPreviewOnly: switched to UVC source device=$usbVideoDeviceId")
+if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
+            try {
+                usbDeviceRegistry.invalidateDevice(usbVideoDeviceId)
+                val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
+                genericStream.changeVideoSource(uvcSource)
+                Log.d(TAG, "initPreviewOnly: switched to UVC source device=$usbVideoDeviceId")
+            } catch (e: Exception) {
+                DiagLogger.logError("USB_SETUP_FAILED", "initPreviewOnly device=$usbVideoDeviceId", e)
+                throw IllegalStateException("USB camera setup failed: ${e.message}")
+            }
         }
 
         if (audioInput == "usb") {
@@ -140,9 +150,15 @@ class CameraStreamManager(
             }
 
             if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
-                val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
-                genericStream.changeVideoSource(uvcSource)
-                Log.d(TAG, "configure: switched to UVC source device=$usbVideoDeviceId")
+                try {
+                    usbDeviceRegistry.invalidateDevice(usbVideoDeviceId)
+                    val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
+                    genericStream.changeVideoSource(uvcSource)
+                    Log.d(TAG, "configure: switched to UVC source device=$usbVideoDeviceId")
+                } catch (e: Exception) {
+                    DiagLogger.logError("USB_SETUP_FAILED", "configure device=$usbVideoDeviceId", e)
+                    throw IllegalStateException("USB camera setup failed: ${e.message}")
+                }
             }
 
             if (audioInput == "usb") {
@@ -174,7 +190,16 @@ class CameraStreamManager(
     }
 
     fun bindPreview(textureView: TextureView) {
-        if (isPreviewReady) genericStream.startPreview(textureView)
+        DiagLogger.log(TAG, "bindPreview: isPreviewReady=$isPreviewReady isOnPreview=${genericStream.isOnPreview} src=$videoSourceClassName")
+        if (!isPreviewReady) return
+        try {
+            genericStream.startPreview(textureView)
+            DiagLogger.log(TAG, "bindPreview: preview bound, sent previewBound event isOnPreview=${genericStream.isOnPreview}")
+            connectChecker.sendEvent(mapOf("type" to "previewBound"))
+        } catch (t: Throwable) {
+            DiagLogger.logError("PREVIEW_BIND_FAILED", "src=$videoSourceClassName", t)
+            emitErr("PREVIEW_BIND_FAILED", t.message ?: "startPreview threw")
+        }
     }
 
     fun rebindPreview(textureView: TextureView) {
@@ -187,8 +212,27 @@ class CameraStreamManager(
     }
 
     private fun configureGlForOrientation(orientation: String) {
+        currentIsPortrait = orientation == "portrait"
+        val isUvc = genericStream.videoSource is UvcVideoSource
+        if (isUvc) {
+            configureGlForUvc(orientation)
+        } else {
+            configureGlForDeviceCamera(orientation)
+        }
+    }
+
+    // Phone (Camera2Source) — values per CLAUDE.md "Orientation Handling".
+    // Do NOT change these without updating CLAUDE.md.
+    private fun configureGlForDeviceCamera(orientation: String) {
         val gl = genericStream.getGlInterface()
         val isPortrait = orientation == "portrait"
+
+        val streamRot = if (isPortrait) 270 else 0
+        val previewRot = if (isPortrait) 270 else 0
+        val orient = if (isPortrait) 90 else 270
+        DiagLogger.log(TAG, "configureGlForDeviceCamera: orientation=$orientation isPortrait=$isPortrait " +
+            "streamRot=$streamRot previewRot=$previewRot orient=$orient " +
+            "enc=${encWidth}x${encHeight} src=${videoSourceClassName}")
 
         gl.autoHandleOrientation = false
         gl.setStreamIsPortrait(isPortrait)
@@ -205,13 +249,76 @@ class CameraStreamManager(
         }
     }
 
+    // UVC / external camera. Native UVC frames arrive in the camera's own
+    // landscape orientation (typical for HDMI capture / webcams), unlike the
+    // phone's portrait sensor frames. Reusing the phone-camera rotation values
+    // produces a white/blank preview in portrait and an off-axis frame in
+    // landscape. Tweak the four constants below if a specific UVC device needs
+    // a different rotation — phone-camera path is unaffected.
+    private fun configureGlForUvc(orientation: String) {
+        val gl = genericStream.getGlInterface()
+        val isPortrait = orientation == "portrait"
+
+        // UVC-specific rotation knobs. Adjust here when testing new devices.
+        val streamRot = if (isPortrait) 90 else 0
+        val previewRot = if (isPortrait) 90 else 0
+        val orient = if (isPortrait) 0 else 0
+
+        DiagLogger.log(TAG, "configureGlForUvc: orientation=$orientation isPortrait=$isPortrait " +
+            "streamRot=$streamRot previewRot=$previewRot orient=$orient " +
+            "enc=${encWidth}x${encHeight} src=${videoSourceClassName}")
+
+        gl.autoHandleOrientation = false
+        gl.setStreamIsPortrait(isPortrait)
+        gl.setPreviewIsPortrait(isPortrait)
+        gl.setStreamRotation(streamRot)
+        gl.setPreviewRotation(previewRot)
+        genericStream.setOrientation(orient)
+    }
+
     fun startStream() {
         intentionalStop = false
         reconnectAttempt = 0
+
+        if (!isPreviewReady) {
+            fail("PREVIEW_NOT_READY", "initPreview/configure not complete")
+        }
+        if (!genericStream.isOnPreview) {
+            fail("PREVIEW_NOT_BOUND", "SurfaceTexture not bound — wait for preview before streaming")
+        }
+
+        val src = genericStream.videoSource
+        if (src is UvcVideoSource && usbDeviceRegistry != null) {
+            if (!usbDeviceRegistry.hasDevice(src.deviceId)) {
+                fail("USB_DEVICE_GONE", "deviceId=${src.deviceId} no longer attached")
+            }
+            if (!usbDeviceRegistry.hasPermission(src.deviceId)) {
+                fail("USB_PERMISSION_REVOKED", "deviceId=${src.deviceId}")
+            }
+        }
+
         val filtersBefore = genericStream.getGlInterface().filtersCount()
-        Log.d(TAG, "startStream: previewReady=$isPreviewReady, onPreview=${genericStream.isOnPreview}, overlayMgr=${overlayFilterManager != null}, filtersCount=$filtersBefore, enc=${encWidth}x${encHeight}")
-        genericStream.startStream(rtmpEndpoint)
+        val gl = genericStream.getGlInterface()
+        DiagLogger.log(TAG, "startStream: videoSrc=${src?.javaClass?.simpleName} " +
+            "filters=$filtersBefore enc=${encWidth}x${encHeight} ep=$rtmpEndpoint " +
+            "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming}")
+        try {
+            genericStream.startStream(rtmpEndpoint)
+        } catch (t: Throwable) {
+            DiagLogger.logError("STREAM_START_THREW", t.message ?: "", t)
+            emitErr("STREAM_START_THREW", t.message ?: "Unknown")
+            throw t
+        }
     }
+
+    private fun fail(code: String, msg: String): Nothing {
+        DiagLogger.logError(code, msg)
+        emitErr(code, msg)
+        throw IllegalStateException("$code: $msg")
+    }
+
+    private fun emitErr(code: String, message: String) =
+        connectChecker.sendEvent(mapOf("type" to "error", "code" to code, "message" to message))
 
     fun stopStream() {
         intentionalStop = true
@@ -258,11 +365,26 @@ class CameraStreamManager(
 
     private fun reinitializeForOrientation(orientation: String) {
         val isPortrait = orientation == "portrait"
-        val newWidth = if (isPortrait) 720 else 1280
-        val newHeight = if (isPortrait) 1280 else 720
-        val facing = if (genericStream.videoSource is com.pedro.encoder.input.sources.video.Camera2Source) {
-            (genericStream.videoSource as com.pedro.encoder.input.sources.video.Camera2Source).getCameraFacing().name
-        } else "back"
+
+        // No actual flip — just refresh GL knobs. Avoids tearing down a working
+        // pipeline (esp. UVC, where rapid release+reopen hits nativeConnect=-99).
+        if (isPortrait == currentIsPortrait && encWidth != 0 && encHeight != 0) {
+            configureGlForOrientation(orientation)
+            return
+        }
+
+        // Real flip: swap configured dims to preserve the user's chosen resolution
+        // (720p stays 720p, 1080p stays 1080p). Hardcoding 1280×720 would clobber 1080p.
+        val newWidth = if (encWidth != 0 && encHeight != 0) encHeight else if (isPortrait) 720 else 1280
+        val newHeight = if (encWidth != 0 && encHeight != 0) encWidth else if (isPortrait) 1280 else 720
+
+        val currentSource = genericStream.videoSource
+        val videoInput = if (currentSource is UvcVideoSource) "usb" else "device"
+        val usbVideoDeviceId = (currentSource as? UvcVideoSource)?.deviceId
+        val facing = when (currentSource) {
+            is com.pedro.encoder.input.sources.video.Camera2Source -> currentSource.getCameraFacing().name
+            else -> "back"
+        }
 
         if (newWidth != encWidth || newHeight != encHeight) {
             genericStream.release()
@@ -285,7 +407,19 @@ class CameraStreamManager(
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
-            switchCamera(facing)
+            if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
+                try {
+                    usbDeviceRegistry.invalidateDevice(usbVideoDeviceId)
+                    val uvcSource = UvcVideoSource(usbDeviceRegistry, usbVideoDeviceId)
+                    genericStream.changeVideoSource(uvcSource)
+                    Log.d(TAG, "reinitialize: switched to UVC source device=$usbVideoDeviceId")
+                } catch (e: Exception) {
+                    DiagLogger.logError("USB_SETUP_FAILED", "reinitialize device=$usbVideoDeviceId", e)
+                    throw IllegalStateException("USB camera setup failed: ${e.message}")
+                }
+            } else {
+                switchCamera(facing)
+            }
 
             isPreviewReady = true
         } else {

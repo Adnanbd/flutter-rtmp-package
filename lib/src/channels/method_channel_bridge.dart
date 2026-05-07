@@ -45,4 +45,9 @@ class MethodChannelBridge {
         'requestUsbPermission', {'deviceId': deviceId});
     return result ?? false;
   }
+
+  Future<String> exportDiagnostics() async =>
+      (await _channel.invokeMethod<String>('exportDiagnostics')) ?? '';
+
+  Future<void> clearDiagnostics() => _channel.invokeMethod('clearDiagnostics');
 }

@@ -110,7 +110,14 @@
       "Bash(javap com/pedro/encoder/input/sources/video/VideoSource.class)",
       "Bash(jar -xf classes.jar)",
       "Bash(jar -xf rootencoder_out/classes.jar \"com/pedro/encoder/input/sources/video/VideoSource.class\")",
-      "Bash(jar xf *)"
+      "Bash(jar xf *)",
+      "Bash(cp ~/.gradle/caches/modules-2/files-2.1/com.github.jiangdongguo.AndroidUSBCamera/libuvc/3.2.0/abf00ed47156ed377a142297f92ac62caaf8a708/libuvc-3.2.0.aar /tmp/libuvc-3.2.0.aar)",
+      "Bash(unzip -l /tmp/libuvc-3.2.0.aar)",
+      "Bash(objdump -T libUVCCamera_320.so)",
+      "Bash(nm -D /tmp/libUVCCamera_320.so)",
+      "Bash(objdump -T /tmp/libUVCCamera_320.so)",
+      "Bash(unzip -l libuvc-3.2.0.aar)",
+      "Bash(unzip -p libuvc-3.2.0.aar classes.jar)"
     ]
   }
 }

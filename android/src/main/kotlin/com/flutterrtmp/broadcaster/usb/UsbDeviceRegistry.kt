@@ -8,6 +8,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.serenegiant.usb.USBMonitor
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,6 +20,7 @@ class UsbDeviceRegistry(
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingPermissions = ConcurrentHashMap<Int, (Boolean) -> Unit>()
+    private val cachedControlBlocks = ConcurrentHashMap<Int, USBMonitor.UsbControlBlock>()
 
     private val usbMonitor = USBMonitor(context, object : USBMonitor.OnDeviceConnectListener {
         override fun onAttach(device: UsbDevice) {}
@@ -35,6 +37,7 @@ class UsbDeviceRegistry(
             ctrlBlock: USBMonitor.UsbControlBlock,
             createNew: Boolean
         ) {
+            cachedControlBlocks[device.deviceId] = ctrlBlock
             pendingPermissions.remove(device.deviceId)?.let { cb ->
                 mainHandler.post { cb(true) }
             }
@@ -59,6 +62,7 @@ class UsbDeviceRegistry(
 
     fun destroy() {
         pendingPermissions.clear()
+        cachedControlBlocks.clear()
         try { usbMonitor.destroy() } catch (_: Exception) {}
     }
 
@@ -106,9 +110,29 @@ class UsbDeviceRegistry(
     fun findDevice(deviceId: Int): UsbDevice? =
         usbManager.deviceList.values.find { it.deviceId == deviceId }
 
+    fun hasDevice(deviceId: Int): Boolean = findDevice(deviceId) != null
+
+    fun hasPermission(deviceId: Int): Boolean =
+        findDevice(deviceId)?.let { usbManager.hasPermission(it) } ?: false
+
+    fun closeControlBlock(ctrlBlock: USBMonitor.UsbControlBlock) {
+        try { ctrlBlock.close() } catch (_: Exception) {}
+    }
+
+    fun invalidateDevice(deviceId: Int) {
+        cachedControlBlocks.remove(deviceId)?.let { closeControlBlock(it) }
+    }
+
     fun openDevice(deviceId: Int): USBMonitor.UsbControlBlock? {
+        val cached: USBMonitor.UsbControlBlock? = cachedControlBlocks[deviceId]
+        if (cached != null) return cached
         val device = findDevice(deviceId) ?: return null
-        return try { usbMonitor.openDevice(device) } catch (_: Exception) { null }
+        return try {
+            usbMonitor.openDevice(device)
+        } catch (e: Exception) {
+            DiagLogger.logError("OPEN_DEVICE_FAILED", "deviceId=$deviceId", e)
+            null
+        }
     }
 
     private fun isUvcDevice(device: UsbDevice): Boolean {
