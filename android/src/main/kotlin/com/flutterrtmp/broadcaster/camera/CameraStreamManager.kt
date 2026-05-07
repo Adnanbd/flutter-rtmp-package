@@ -330,7 +330,21 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         lastScorebandBytes = bytes
         val filters = genericStream.getGlInterface().filtersCount()
         Log.d(TAG, "updateScoreband: bytes=${bytes.size}, filtersCount=$filters, streaming=${genericStream.isStreaming}, onPreview=${genericStream.isOnPreview}")
-        overlayFilterManager?.updateScoreband(bytes)
+        val mgr = overlayFilterManager
+        if (mgr == null) {
+            val msg = "OVERLAY_NOT_INITIALIZED: updateScoreband called before configure()"
+            DiagLogger.logError("OVERLAY_NOT_INITIALIZED", msg)
+            emitErr("OVERLAY_NOT_INITIALIZED", msg)
+            throw IllegalStateException(msg)
+        }
+        try {
+            mgr.updateScoreband(bytes)
+        } catch (t: Throwable) {
+            val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()
+            DiagLogger.logError(code, t.message ?: "updateScoreband failed", t)
+            emitErr(code, t.message ?: "updateScoreband failed")
+            throw t
+        }
     }
 
     fun switchCamera(facing: String) {

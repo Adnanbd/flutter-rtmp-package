@@ -9,7 +9,6 @@ import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
 import 'package:flutter_rtmp_broadcaster_example/score.band/score.band.dart';
 
 import '../widgets/camera_controls_bar.dart';
-import '../widgets/scoreband_widget.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key, required this.controller});

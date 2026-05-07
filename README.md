@@ -77,9 +77,26 @@ Future<void> requestPermissions() async {
 }
 ```
 
-### 4. `android/build.gradle` — JitPack Repository
+### 4. JitPack Repository
 
-The plugin depends on [RootEncoder](https://github.com/pedroSG94/RootEncoder) via JitPack. Add JitPack to your project-level `build.gradle`:
+The plugin depends on [RootEncoder](https://github.com/pedroSG94/RootEncoder) via JitPack. **You must add JitPack to your consumer app — Flutter does not propagate the plugin's own repository declarations.**
+
+#### Newer Flutter projects (Gradle 7+, `settings.gradle.kts` with `dependencyResolutionManagement`)
+
+Edit `android/settings.gradle.kts`:
+
+```kotlin
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+```
+
+#### Older projects (`android/build.gradle` with `allprojects`)
 
 ```groovy
 allprojects {
@@ -90,6 +107,22 @@ allprojects {
     }
 }
 ```
+
+If JitPack is missing, the build fails with `Could not resolve com.github.pedroSG94.RootEncoder:library:2.7.2`.
+
+### 5. ProGuard / R8 (Release / AAB Builds)
+
+The plugin ships [`android/consumer-rules.pro`](android/consumer-rules.pro), which Gradle automatically merges into the consumer app's R8 config via `consumerProguardFiles`. **No manual ProGuard rules are required in the consumer app.**
+
+If you have a custom `proguard-rules.pro` in the consumer app and overlays disappear in release builds (sponsor images and scoreband missing while stream still publishes), confirm your rules don't strip RootEncoder. Belt-and-suspenders rules to add to `android/app/proguard-rules.pro`:
+
+```proguard
+-keep class com.pedro.** { *; }
+-keep interface com.pedro.** { *; }
+-dontwarn com.pedro.**
+```
+
+Symptom of missing rules: stream connects, encoder runs, but the GPU overlay pipeline silently no-ops because R8 mangles `ImageObjectFilterRender` internals.
 
 ---
 

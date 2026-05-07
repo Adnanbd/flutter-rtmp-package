@@ -294,6 +294,14 @@ Already implemented in `example/lib/main.dart:_pushScoreband`. Do not regress.
 - `android/src/main/kotlin/com/flutterrtmp/broadcaster/overlay/OverlayFilterManager.kt` — `updateScoreband`, `orientBitmap`, `applySponsorPosition` carry the implementation.
 - `android/src/main/kotlin/com/flutterrtmp/broadcaster/camera/CameraStreamManager.kt` — `configureGlForOrientation` sets `setStreamRotation` / `setStreamIsPortrait`; the `isPortrait` flag flows from here into `OverlayFilterManager`'s constructor.
 
+### R8 / ProGuard — overlays vanish in release (2026-05-07)
+
+Symptom: stream connects in release/AAB builds, sponsors and scoreband both fail to render together. Root cause: R8 mangles RootEncoder internals (`com.pedro.encoder.input.gl.render.filters.object.ImageObjectFilterRender` and GL-thread dispatch), so every `glInterface.addFilter()` silently no-ops. Fix lives in `android/consumer-rules.pro` — keeps `com.pedro.**` plus the plugin's own `rtmp` and `overlay` packages. Rules propagate to consumer apps via `consumerProguardFiles 'consumer-rules.pro'` in `android/build.gradle`. Do not narrow these keeps without testing a real release/AAB build with overlays.
+
+### Loud overlay failures (2026-05-07)
+
+`OverlayFilterManager.updateScoreband()` now throws (`OVERLAY_NOT_INITIALIZED` / `OVERLAY_DECODE_FAILED`) instead of returning silently. `CameraStreamManager.updateScoreband()` catches, emits an `error` event on the EventChannel, and rethrows so the plugin's MethodChannel handler returns a `PlatformException` to Dart. Sponsor decode failures in `initLayers()` and `updateSponsors()` upgraded from `Log.w` to `Log.e` with byte size. Silent overlay failures are now impossible to miss in release builds where `Log.w` may be stripped.
+
 ### For iOS port (M5–M6)
 
 Re-verify each finding against HaishinKit `ScreenObject`; do not assume Android answers carry over:

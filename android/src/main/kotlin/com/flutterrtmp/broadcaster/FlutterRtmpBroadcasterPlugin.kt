@@ -239,8 +239,17 @@ class FlutterRtmpBroadcasterPlugin :
         }
         when (layerId) {
             "scoreband" -> {
-                cameraStreamManager?.updateScoreband(bytes)
-                result.success(null)
+                val manager = cameraStreamManager ?: run {
+                    result.error("NOT_CONFIGURED", "configure() must be called before updateOverlay()", null)
+                    return
+                }
+                try {
+                    manager.updateScoreband(bytes)
+                    result.success(null)
+                } catch (t: Throwable) {
+                    val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()
+                    result.error(code, t.message ?: "updateScoreband failed", null)
+                }
             }
             else -> result.error("UNKNOWN_LAYER", "Unknown layerId: $layerId", null)
         }

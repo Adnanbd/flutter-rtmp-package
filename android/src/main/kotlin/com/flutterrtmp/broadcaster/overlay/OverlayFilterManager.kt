@@ -33,10 +33,10 @@ class OverlayFilterManager(
         sponsorFilters.clear()
         scorebandFilter = null
 
-        for (sponsor in sponsorList) {
+        for ((idx, sponsor) in sponsorList.withIndex()) {
             val bitmap = BitmapFactory.decodeByteArray(sponsor.bytes, 0, sponsor.bytes.size)
             if (bitmap == null) {
-                Log.w(TAG, "Failed to decode sponsor bitmap — layer skipped")
+                Log.e(TAG, "Failed to decode sponsor[$idx] bitmap (bytes=${sponsor.bytes.size}) — layer skipped")
                 continue
             }
             val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
@@ -53,13 +53,13 @@ class OverlayFilterManager(
     fun updateScoreband(pngBytes: ByteArray) {
         val stream = streamRef
         if (stream == null) {
-            Log.w(TAG, "updateScoreband: streamRef NULL — initLayers not called")
-            return
+            Log.e(TAG, "updateScoreband: streamRef NULL — initLayers not called")
+            throw IllegalStateException("OVERLAY_NOT_INITIALIZED: updateScoreband called before initLayers — call configure() first")
         }
         val bitmap = BitmapFactory.decodeByteArray(pngBytes, 0, pngBytes.size)
         if (bitmap == null) {
-            Log.w(TAG, "Failed to decode scoreband PNG — update skipped (bytes=${pngBytes.size})")
-            return
+            Log.e(TAG, "Failed to decode scoreband PNG — update skipped (bytes=${pngBytes.size})")
+            throw IllegalArgumentException("OVERLAY_DECODE_FAILED: scoreband PNG decode returned null (bytes=${pngBytes.size})")
         }
 
         // Compute target placement in POST-rotation (stream output) frame.
