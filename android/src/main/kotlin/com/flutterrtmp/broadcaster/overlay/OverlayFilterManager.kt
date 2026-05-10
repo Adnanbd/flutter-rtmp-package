@@ -33,10 +33,12 @@ class OverlayFilterManager(
         sponsorFilters.clear()
         scorebandFilter = null
 
+        var decodeFails = 0
         for ((idx, sponsor) in sponsorList.withIndex()) {
             val bitmap = BitmapFactory.decodeByteArray(sponsor.bytes, 0, sponsor.bytes.size)
             if (bitmap == null) {
-                Log.e(TAG, "Failed to decode sponsor[$idx] bitmap (bytes=${sponsor.bytes.size}) — layer skipped")
+                Log.e(TAG, "initLayers: decode FAIL idx=$idx bytes=${sponsor.bytes.size}")
+                decodeFails++
                 continue
             }
             val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
@@ -45,9 +47,13 @@ class OverlayFilterManager(
             applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
+            Log.d(TAG, "initLayers[add idx=$idx]: bmp=${bitmap.width}x${bitmap.height}, " +
+                "x=${sponsor.x}, y=${sponsor.y}, w=${sponsor.width}, h=$correctedH, " +
+                "glFilters=${stream.getGlInterface().filtersCount()}")
         }
 
-        Log.d(TAG, "initLayers: sponsors=${sponsorFilters.size}, scoreband=lazy, encDims=${streamWidth}x${streamHeight}, isPortrait=$isPortrait")
+        Log.d(TAG, "initLayers: input=${sponsorList.size}, added=${sponsorFilters.size}, decodeFails=$decodeFails, " +
+            "scoreband=lazy, encDims=${streamWidth}x${streamHeight}, isPortrait=$isPortrait")
     }
 
     fun updateScoreband(pngBytes: ByteArray) {
@@ -115,10 +121,12 @@ class OverlayFilterManager(
         }
         sponsorFilters.clear()
 
-        for (sponsor in sponsorList) {
+        var decodeFails = 0
+        for ((idx, sponsor) in sponsorList.withIndex()) {
             val bitmap = BitmapFactory.decodeByteArray(sponsor.bytes, 0, sponsor.bytes.size)
             if (bitmap == null) {
-                Log.w(TAG, "Failed to decode sponsor bitmap — layer skipped")
+                Log.w(TAG, "updateSponsors: decode FAIL idx=$idx bytes=${sponsor.bytes.size}")
+                decodeFails++
                 continue
             }
             val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
@@ -127,7 +135,11 @@ class OverlayFilterManager(
             applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
+            Log.d(TAG, "updateSponsors[add idx=$idx]: bmp=${bitmap.width}x${bitmap.height}, " +
+                "x=${sponsor.x}, y=${sponsor.y}, w=${sponsor.width}, h=$correctedH, " +
+                "glFilters=${stream.getGlInterface().filtersCount()}")
         }
+        Log.d(TAG, "updateSponsors: input=${sponsorList.size}, added=${sponsorFilters.size}, decodeFails=$decodeFails")
     }
 
     fun release(stream: GenericStream) {

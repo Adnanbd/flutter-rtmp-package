@@ -117,7 +117,8 @@
       "Bash(nm -D /tmp/libUVCCamera_320.so)",
       "Bash(objdump -T /tmp/libUVCCamera_320.so)",
       "Bash(unzip -l libuvc-3.2.0.aar)",
-      "Bash(unzip -p libuvc-3.2.0.aar classes.jar)"
+      "Bash(unzip -p libuvc-3.2.0.aar classes.jar)",
+      "Bash(grep -E \"\\\\.\\(kt|dart\\)$\")"
     ]
   }
 }
