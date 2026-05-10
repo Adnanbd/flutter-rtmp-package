@@ -56,6 +56,8 @@ class _CameraScreenState extends State<CameraScreen> {
           _streaming = false;
         case RtmpStatusType.error:
           _showSnack('Error: ${s.errorCode} — ${s.errorMessage}');
+        case RtmpStatusType.warning:
+          _showSnack('Warning: ${s.errorCode} — ${s.errorMessage}');
         case RtmpStatusType.bitrate:
         case RtmpStatusType.reconnecting:
         case RtmpStatusType.previewBound:

@@ -25,10 +25,12 @@ class OverlayFilterManager(
     private var scorebandFilter: ImageObjectFilterRender? = null
     private var streamRef: GenericStream? = null
 
+    data class OverlayOpResult(val input: Int, val added: Int, val decodeFails: Int)
+
     fun initLayers(
         stream: GenericStream,
         sponsorList: List<SponsorConfig>
-    ) {
+    ): OverlayOpResult {
         streamRef = stream
         sponsorFilters.clear()
         scorebandFilter = null
@@ -54,6 +56,7 @@ class OverlayFilterManager(
 
         Log.d(TAG, "initLayers: input=${sponsorList.size}, added=${sponsorFilters.size}, decodeFails=$decodeFails, " +
             "scoreband=lazy, encDims=${streamWidth}x${streamHeight}, isPortrait=$isPortrait")
+        return OverlayOpResult(sponsorList.size, sponsorFilters.size, decodeFails)
     }
 
     fun updateScoreband(pngBytes: ByteArray) {
@@ -115,7 +118,7 @@ class OverlayFilterManager(
         }
     }
 
-    fun updateSponsors(stream: GenericStream, sponsorList: List<SponsorConfig>) {
+    fun updateSponsors(stream: GenericStream, sponsorList: List<SponsorConfig>): OverlayOpResult {
         for (filter in sponsorFilters) {
             stream.getGlInterface().removeFilter(filter)
         }
@@ -140,6 +143,7 @@ class OverlayFilterManager(
                 "glFilters=${stream.getGlInterface().filtersCount()}")
         }
         Log.d(TAG, "updateSponsors: input=${sponsorList.size}, added=${sponsorFilters.size}, decodeFails=$decodeFails")
+        return OverlayOpResult(sponsorList.size, sponsorFilters.size, decodeFails)
     }
 
     fun release(stream: GenericStream) {

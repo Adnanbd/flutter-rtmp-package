@@ -1,4 +1,4 @@
-enum RtmpStatusType { connected, disconnected, error, bitrate, reconnecting, previewBound, usbDetached }
+enum RtmpStatusType { connected, disconnected, error, warning, bitrate, reconnecting, previewBound, usbDetached }
 
 class RtmpStatus {
   const RtmpStatus({

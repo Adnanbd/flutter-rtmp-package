@@ -10,11 +10,28 @@ class RtmpConnectChecker(
     private val onDisconnectedCallback: () -> Unit
 ) : ConnectChecker {
 
-    var sink: EventChannel.EventSink? = null
+    private var _sink: EventChannel.EventSink? = null
+    var sink: EventChannel.EventSink?
+        get() = _sink
+        set(value) {
+            _sink = value
+            if (value != null) {
+                val drained = pending.toList()
+                pending.clear()
+                drained.forEach { mainHandler.post { value.success(it) } }
+            }
+        }
+    private val pending = mutableListOf<Map<String, Any?>>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun sendEvent(event: Map<String, Any?>) {
-        val s = sink ?: return
+        val s = _sink
+        if (s == null) {
+            // Buffer until Dart attaches a listener (e.g. warnings emitted during configure()).
+            // Cap at 32 to avoid unbounded growth if listener never attaches.
+            if (pending.size < 32) pending.add(event)
+            return
+        }
         mainHandler.post { s.success(event) }
     }
 

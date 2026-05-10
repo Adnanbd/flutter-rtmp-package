@@ -173,7 +173,9 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             configureGlForOrientation(orientation)
 
             overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
-            overlayFilterManager?.initLayers(genericStream, sponsors)
+            overlayFilterManager?.initLayers(genericStream, sponsors)?.also {
+                checkSponsorResult(it, "configure[fresh]")
+            }
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
@@ -182,7 +184,9 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             isPreviewReady = true
         } else {
             // Same dims — refresh sponsors only; scoreband filter already exists from initPreview.
-            overlayFilterManager?.updateSponsors(genericStream, sponsors)
+            overlayFilterManager?.updateSponsors(genericStream, sponsors)?.also {
+                checkSponsorResult(it, "configure[reuse]")
+            }
             if (videoInput != "usb") switchCamera(initialFacing)
         }
 
@@ -302,6 +306,15 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         DiagLogger.log(TAG, "startStream: videoSrc=${src?.javaClass?.simpleName} " +
             "filters=$filtersBefore enc=${encWidth}x${encHeight} ep=$rtmpEndpoint " +
             "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming}")
+
+        if (filtersBefore == 0 && lastSponsors.isEmpty() && lastScorebandBytes == null) {
+            emitWarn(
+                "NO_OVERLAYS_AT_STREAM_START",
+                "No overlays registered. Stream will publish camera-only video. " +
+                    "Pass non-empty sponsors to configure() and/or call updateScoreband(bytes) after RtmpStatusType.connected.",
+                mapOf("sponsorCount" to lastSponsors.size, "scorebandPushed" to false)
+            )
+        }
         try {
             genericStream.startStream(rtmpEndpoint)
         } catch (t: Throwable) {
@@ -319,6 +332,24 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
     private fun emitErr(code: String, message: String) =
         connectChecker.sendEvent(mapOf("type" to "error", "code" to code, "message" to message))
+
+    private fun emitWarn(code: String, message: String, extra: Map<String, Any?> = emptyMap()) {
+        Log.w(TAG, "WARN $code: $message ${if (extra.isNotEmpty()) extra else ""}")
+        val payload = mutableMapOf<String, Any?>("type" to "warning", "code" to code, "message" to message)
+        payload.putAll(extra)
+        connectChecker.sendEvent(payload)
+    }
+
+    private fun checkSponsorResult(result: com.flutterrtmp.broadcaster.overlay.OverlayFilterManager.OverlayOpResult, where: String) {
+        if (result.input > 0 && result.added < result.input) {
+            emitWarn(
+                "SPONSOR_DECODE_FAILED",
+                "$where: ${result.decodeFails}/${result.input} sponsor image(s) failed to decode (HEIC or corrupted bytes?). " +
+                    "Stream will publish with ${result.added} sponsor(s) instead of ${result.input}.",
+                mapOf("input" to result.input, "added" to result.added, "decodeFails" to result.decodeFails)
+            )
+        }
+    }
 
     fun stopStream() {
         intentionalStop = true
@@ -417,7 +448,9 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             configureGlForOrientation(orientation)
 
             overlayFilterManager = OverlayFilterManager(newWidth, newHeight, isPortrait)
-            overlayFilterManager?.initLayers(genericStream, lastSponsors)
+            overlayFilterManager?.initLayers(genericStream, lastSponsors)?.also {
+                checkSponsorResult(it, "reinitForOrientation")
+            }
 
             lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
 
