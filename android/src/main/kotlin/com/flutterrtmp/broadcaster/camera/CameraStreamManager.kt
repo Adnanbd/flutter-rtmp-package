@@ -307,13 +307,32 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             "filters=$filtersBefore enc=${encWidth}x${encHeight} ep=$rtmpEndpoint " +
             "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming}")
 
-        if (filtersBefore == 0 && lastSponsors.isEmpty() && lastScorebandBytes == null) {
-            emitWarn(
-                "NO_OVERLAYS_AT_STREAM_START",
-                "No overlays registered. Stream will publish camera-only video. " +
-                    "Pass non-empty sponsors to configure() and/or call updateScoreband(bytes) after RtmpStatusType.connected.",
-                mapOf("sponsorCount" to lastSponsors.size, "scorebandPushed" to false)
-            )
+        if (filtersBefore == 0) {
+            if (lastSponsors.isEmpty() && lastScorebandBytes == null) {
+                emitWarn(
+                    "NO_OVERLAYS_AT_STREAM_START",
+                    "No overlays registered. Stream will publish camera-only video. " +
+                        "Pass non-empty sponsors to configure() and/or call updateScoreband(bytes) after RtmpStatusType.connected.",
+                    mapOf("sponsorCount" to lastSponsors.size, "scorebandPushed" to false)
+                )
+            } else {
+                // Filters added earlier but RootEncoder GL pipeline lost them
+                // (observed at 1920x1080 after configureGlForOrientation rotation knobs).
+                // Re-apply BEFORE startStream — filter add must precede startStream per CLAUDE.md.
+                emitWarn(
+                    "OVERLAY_FILTERS_LOST",
+                    "Filters added during configure() were dropped by GL pipeline before startStream — re-applying. " +
+                        "lastSponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}.",
+                    mapOf("sponsorCount" to lastSponsors.size, "scorebandPushed" to (lastScorebandBytes != null))
+                )
+                if (lastSponsors.isNotEmpty()) {
+                    overlayFilterManager?.updateSponsors(genericStream, lastSponsors)?.also {
+                        checkSponsorResult(it, "startStream-recovery")
+                    }
+                }
+                lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
+                Log.d(TAG, "startStream: post-recovery filters=${genericStream.getGlInterface().filtersCount()}")
+            }
         }
         try {
             genericStream.startStream(rtmpEndpoint)
