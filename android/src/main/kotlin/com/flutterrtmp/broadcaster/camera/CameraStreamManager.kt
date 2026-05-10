@@ -198,6 +198,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         if (!isPreviewReady) return
         try {
             genericStream.startPreview(textureView)
+            reapplyOverlaysIfNeeded("bindPreview")
             DiagLogger.log(TAG, "bindPreview: preview bound, sent previewBound event isOnPreview=${genericStream.isOnPreview}")
             connectChecker.sendEvent(mapOf("type" to "previewBound"))
         } catch (t: Throwable) {
@@ -208,7 +209,26 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
     fun rebindPreview(textureView: TextureView) {
         unbindPreview()
-        if (isPreviewReady) genericStream.startPreview(textureView)
+        if (isPreviewReady) {
+            genericStream.startPreview(textureView)
+            reapplyOverlaysIfNeeded("rebindPreview")
+        }
+    }
+
+    // Re-apply sponsor + scoreband overlays. Idempotent — `updateSponsors` and
+    // `updateScoreband` clear/replace existing filters. Used after pipeline
+    // transitions (startPreview, startStream) where RootEncoder GL drops filters
+    // attached pre-transition.
+    private fun reapplyOverlaysIfNeeded(where: String) {
+        val mgr = overlayFilterManager ?: return
+        if (lastSponsors.isEmpty() && lastScorebandBytes == null) return
+        Log.d(TAG, "reapplyOverlays[$where]: sponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}, filtersBefore=${genericStream.getGlInterface().filtersCount()}")
+        if (lastSponsors.isNotEmpty()) {
+            mgr.updateSponsors(genericStream, lastSponsors).also {
+                checkSponsorResult(it, "reapply[$where]")
+            }
+        }
+        lastScorebandBytes?.let { mgr.updateScoreband(it) }
     }
 
     fun unbindPreview() {
