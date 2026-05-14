@@ -243,8 +243,11 @@ class FlutterRtmpBroadcasterPlugin :
                     result.error("NOT_CONFIGURED", "configure() must be called before updateOverlay()", null)
                     return
                 }
+                val width = (call.argument<Int>("width") ?: 90).toFloat()
+                val x = (call.argument<Int>("x") ?: 50).toFloat()
+                val y = (call.argument<Int>("y") ?: 100).toFloat()
                 try {
-                    manager.updateScoreband(bytes)
+                    manager.updateScoreband(bytes, width, x, y)
                     result.success(null)
                 } catch (t: Throwable) {
                     val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()

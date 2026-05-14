@@ -66,9 +66,14 @@ class RtmpBroadcastController {
     }
   }
 
-  Future<void> updateScoreband(Uint8List pngBytes) async {
+  Future<void> updateScoreband(
+    Uint8List pngBytes, {
+    int width = 90,
+    int x = 50,
+    int y = 100,
+  }) async {
     try {
-      await _method.updateOverlay('scoreband', pngBytes);
+      await _method.updateOverlay('scoreband', pngBytes, width: width, x: x, y: y);
     } on PlatformException catch (e) {
       throw RtmpBroadcasterException(e.code, e.message ?? '');
     }

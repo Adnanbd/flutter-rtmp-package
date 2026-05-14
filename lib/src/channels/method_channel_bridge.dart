@@ -15,8 +15,20 @@ class MethodChannelBridge {
 
   Future<void> stopStream() => _channel.invokeMethod('stopStream');
 
-  Future<void> updateOverlay(String layerId, Uint8List bytes) =>
-      _channel.invokeMethod('updateOverlay', {'layerId': layerId, 'bytes': bytes});
+  Future<void> updateOverlay(
+    String layerId,
+    Uint8List bytes, {
+    required int width,
+    required int x,
+    required int y,
+  }) =>
+      _channel.invokeMethod('updateOverlay', {
+        'layerId': layerId,
+        'bytes': bytes,
+        'width': width,
+        'x': x,
+        'y': y,
+      });
 
   Future<void> updateSponsors(List<Map<String, dynamic>> sponsors) =>
       _channel.invokeMethod('updateSponsors', {'sponsors': sponsors});

@@ -52,6 +52,9 @@ class CameraStreamManager(
     private var encHeight = 0
     private var currentIsPortrait: Boolean = true
     private var lastScorebandBytes: ByteArray? = null
+    private var lastScorebandWidth: Float = 90f
+    private var lastScorebandX: Float = 50f
+    private var lastScorebandY: Float = 100f
     private var lastSponsors: List<SponsorConfig> = emptyList()
     var rtmpEndpoint: String = ""
         private set
@@ -177,7 +180,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 checkSponsorResult(it, "configure[fresh]")
             }
 
-            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
+            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
 
             if (videoInput != "usb") switchCamera(initialFacing)
 
@@ -228,7 +231,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 checkSponsorResult(it, "reapply[$where]")
             }
         }
-        lastScorebandBytes?.let { mgr.updateScoreband(it) }
+        lastScorebandBytes?.let { mgr.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
     }
 
     fun unbindPreview() {
@@ -350,7 +353,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                         checkSponsorResult(it, "startStream-recovery")
                     }
                 }
-                lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
+                lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
                 Log.d(TAG, "startStream: post-recovery filters=${genericStream.getGlInterface().filtersCount()}")
             }
         }
@@ -396,10 +399,13 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         genericStream.stopStream()
     }
 
-    fun updateScoreband(bytes: ByteArray) {
+    fun updateScoreband(bytes: ByteArray, width: Float, x: Float, y: Float) {
         lastScorebandBytes = bytes
+        lastScorebandWidth = width
+        lastScorebandX = x
+        lastScorebandY = y
         val filters = genericStream.getGlInterface().filtersCount()
-        Log.d(TAG, "updateScoreband: bytes=${bytes.size}, filtersCount=$filters, streaming=${genericStream.isStreaming}, onPreview=${genericStream.isOnPreview}")
+        Log.d(TAG, "updateScoreband: bytes=${bytes.size}, w=$width x=$x y=$y, filtersCount=$filters, streaming=${genericStream.isStreaming}, onPreview=${genericStream.isOnPreview}")
         val mgr = overlayFilterManager
         if (mgr == null) {
             val msg = "OVERLAY_NOT_INITIALIZED: updateScoreband called before configure()"
@@ -408,7 +414,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             throw IllegalStateException(msg)
         }
         try {
-            mgr.updateScoreband(bytes)
+            mgr.updateScoreband(bytes, width, x, y)
         } catch (t: Throwable) {
             val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()
             DiagLogger.logError(code, t.message ?: "updateScoreband failed", t)
@@ -491,7 +497,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 checkSponsorResult(it, "reinitForOrientation")
             }
 
-            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it) }
+            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
 
             if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
                 try {

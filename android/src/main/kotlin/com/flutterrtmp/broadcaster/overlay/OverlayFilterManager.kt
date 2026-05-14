@@ -59,7 +59,7 @@ class OverlayFilterManager(
         return OverlayOpResult(sponsorList.size, sponsorFilters.size, decodeFails)
     }
 
-    fun updateScoreband(pngBytes: ByteArray) {
+    fun updateScoreband(pngBytes: ByteArray, widthParam: Float, xParam: Float, yParam: Float) {
         val stream = streamRef
         if (stream == null) {
             Log.e(TAG, "updateScoreband: streamRef NULL — initLayers not called")
@@ -72,14 +72,16 @@ class OverlayFilterManager(
         }
 
         // Compute target placement in POST-rotation (stream output) frame.
-        // Width 90%, height proportional, anchored 4% from bottom.
-        val widthPct = 90f
+        // Dart supplies width (1-100), x (0-100: 0=left, 100=right), y (0-100: 0=top, 100=bottom).
+        // Height stays aspect-derived from bitmap.
+        val widthPct = widthParam.coerceIn(1f, 100f)
+        val xPct = xParam.coerceIn(0f, 100f)
+        val yPct = yParam.coerceIn(0f, 100f)
         val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
         val postScaleX = widthPct
         val postScaleY = (widthPct / 100f) * (streamWidth.toFloat() / streamHeight.toFloat()) / bitmapAspect * 100f
-        val bottomMarginPct = 4f
-        val postPosX = (100f - postScaleX) / 2f
-        val postPosY = 100f - postScaleY - bottomMarginPct
+        val postPosX = (xPct / 100f) * (100f - postScaleX)
+        val postPosY = (yPct / 100f) * (100f - postScaleY)
 
         // Convert to PRE-rotation coords (where filter actually renders).
         val finalBitmap = orientBitmap(bitmap)
@@ -109,12 +111,12 @@ class OverlayFilterManager(
             filter.setPosition(posX, posY)
             stream.getGlInterface().addFilter(filter)
             scorebandFilter = filter
-            Log.d(TAG, "updateScoreband[create]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%, isPortrait=$isPortrait, glFilters=${stream.getGlInterface().filtersCount()}")
+            Log.d(TAG, "updateScoreband[create]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%, dartW=$widthPct dartX=$xPct dartY=$yPct, isPortrait=$isPortrait, glFilters=${stream.getGlInterface().filtersCount()}")
         } else {
             existing.setImage(finalBitmap)
             existing.setScale(scaleX, scaleY)
             existing.setPosition(posX, posY)
-            Log.d(TAG, "updateScoreband[update]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%")
+            Log.d(TAG, "updateScoreband[update]: bmp=${finalBitmap.width}x${finalBitmap.height}, scale=($scaleX,$scaleY)%, pos=($posX,$posY)%, dartW=$widthPct dartX=$xPct dartY=$yPct")
         }
     }
 
