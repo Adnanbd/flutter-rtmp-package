@@ -36,7 +36,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
   UsbAudioDeviceInfo? _selectedUsbAudioDevice;
   bool _loadingUsbDevices = false;
 
-  static const _posX = [0.02, 0.39, 0.76];
+  static const _posX = [2, 39, 76];
   static const _posLabels = ['Left', 'Middle', 'Right'];
 
   // Temporary controller for USB device discovery only
@@ -123,7 +123,12 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
         .map(
           (s) => SponsorOverlay(
             bytes: s.bytes,
-            position: OverlayPosition(x: _posX[s.positionIndex], y: 0.02, width: 0.22, height: 0.08),
+            placement: SponsorPlacement(
+              left: _posX[s.positionIndex],
+              top: 2,
+              width: 22,
+              height: 100,
+            ),
           ),
         )
         .toList();

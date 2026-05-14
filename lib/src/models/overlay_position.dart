@@ -1,4 +1,5 @@
 /// Normalized position and size of an overlay layer (all values 0.0–1.0).
+@Deprecated('Use SponsorPlacement instead')
 class OverlayPosition {
   const OverlayPosition({
     required this.x,

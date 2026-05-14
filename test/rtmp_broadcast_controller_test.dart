@@ -59,7 +59,7 @@ void main() {
       );
     });
 
-    test('sends sponsors in correct map shape', () async {
+    test('sends sponsors in correct map shape (new placement API)', () async {
       final ctrl = RtmpBroadcastController();
       final bytes = Uint8List.fromList([0, 1, 2, 3]);
       await ctrl.configure(
@@ -68,7 +68,7 @@ void main() {
         sponsors: [
           SponsorOverlay(
             bytes: bytes,
-            position: const OverlayPosition(x: 0.1, y: 0.2, width: 0.3, height: 0.05),
+            placement: const SponsorPlacement(left: 10, top: 20, width: 30, height: 50),
           ),
         ],
         config: StreamConfig.youtube720Landscape,
@@ -78,10 +78,36 @@ void main() {
       expect(sponsors.length, 1);
       final s = sponsors.first as Map;
       expect(s['bytes'], bytes);
-      expect(s['x'], 0.1);
-      expect(s['y'], 0.2);
-      expect(s['width'], 0.3);
-      expect(s['height'], 0.05);
+      expect(s['left'], 10);
+      expect(s['top'], 20);
+      expect(s['width'], 30);
+      expect(s['height'], 50);
+      expect(s.containsKey('right'), false);
+      expect(s.containsKey('bottom'), false);
+    });
+
+    test('legacy OverlayPosition translates to new wire format', () async {
+      final ctrl = RtmpBroadcastController();
+      final bytes = Uint8List.fromList([0, 1, 2, 3]);
+      await ctrl.configure(
+        rtmpUrl: 'rtmp://host/app',
+        rtmpKey: 'key',
+        sponsors: [
+          // ignore: deprecated_member_use_from_same_package
+          SponsorOverlay(
+            bytes: bytes,
+            // ignore: deprecated_member_use_from_same_package
+            position: const OverlayPosition(x: 0.1, y: 0.2, width: 0.3, height: 0.05),
+          ),
+        ],
+        config: StreamConfig.youtube720Landscape,
+      );
+      final args = calls.first.arguments as Map;
+      final s = (args['sponsors'] as List).first as Map;
+      expect(s['left'], 10);
+      expect(s['top'], 20);
+      expect(s['width'], 30);
+      expect(s['height'], 100);
     });
   });
 }

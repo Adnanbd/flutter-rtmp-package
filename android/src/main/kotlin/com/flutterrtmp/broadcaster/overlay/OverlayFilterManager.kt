@@ -43,14 +43,13 @@ class OverlayFilterManager(
                 decodeFails++
                 continue
             }
-            val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
             val filter = ImageObjectFilterRender()
             filter.setImage(orientBitmap(bitmap))
-            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
+            applySponsorPosition(filter, bitmap, sponsor)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
             Log.d(TAG, "initLayers[add idx=$idx]: bmp=${bitmap.width}x${bitmap.height}, " +
-                "x=${sponsor.x}, y=${sponsor.y}, w=${sponsor.width}, h=$correctedH, " +
+                "L=${sponsor.left} R=${sponsor.right} T=${sponsor.top} B=${sponsor.bottom} w=${sponsor.width} h=${sponsor.height}, " +
                 "glFilters=${stream.getGlInterface().filtersCount()}")
         }
 
@@ -134,14 +133,13 @@ class OverlayFilterManager(
                 decodeFails++
                 continue
             }
-            val correctedH = aspectCorrectHeight(bitmap, sponsor.width)
             val filter = ImageObjectFilterRender()
             filter.setImage(orientBitmap(bitmap))
-            applySponsorPosition(filter, sponsor.x, sponsor.y, sponsor.width, correctedH)
+            applySponsorPosition(filter, bitmap, sponsor)
             stream.getGlInterface().addFilter(filter)
             sponsorFilters.add(filter)
             Log.d(TAG, "updateSponsors[add idx=$idx]: bmp=${bitmap.width}x${bitmap.height}, " +
-                "x=${sponsor.x}, y=${sponsor.y}, w=${sponsor.width}, h=$correctedH, " +
+                "L=${sponsor.left} R=${sponsor.right} T=${sponsor.top} B=${sponsor.bottom} w=${sponsor.width} h=${sponsor.height}, " +
                 "glFilters=${stream.getGlInterface().filtersCount()}")
         }
         Log.d(TAG, "updateSponsors: input=${sponsorList.size}, added=${sponsorFilters.size}, decodeFails=$decodeFails")
@@ -155,16 +153,6 @@ class OverlayFilterManager(
         streamRef = null
     }
 
-    // Compute aspect-ratio-correct normalized height in post-rotation space.
-    // Uses ORIGINAL (pre-orientBitmap) bitmap dimensions so the aspect ratio
-    // reflects how the image should appear in the final stream output frame.
-    private fun aspectCorrectHeight(bitmap: Bitmap, normalizedWidth: Float): Float {
-        val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-        val pixelW = normalizedWidth * streamWidth
-        val pixelH = pixelW / aspect
-        return (pixelH / streamHeight).coerceAtMost(1f)
-    }
-
     // Counter-rotates bitmap 90° CW so it appears upright after the frame's 90° CCW rotation.
     private fun orientBitmap(src: Bitmap): Bitmap {
         if (!isPortrait) return src
@@ -172,21 +160,49 @@ class OverlayFilterManager(
         return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
     }
 
-    // Sponsor position: normalized (0-1) top-left rect in POST-rotation frame
-    // → 0-100% PRE-rotation coords. Same swap rule as scoreband.
+    // Sponsor placement (post-rotation 0-100% frame). BoxFit.contain sizing + edge anchor rules.
+    // Pre/post rotation swap matches scoreband.
     private fun applySponsorPosition(
         filter: ImageObjectFilterRender,
-        x: Float, y: Float, w: Float, h: Float
+        bitmap: Bitmap,
+        cfg: SponsorConfig
     ) {
-        val postPosX = x * 100f
-        val postPosY = y * 100f
-        val postScaleX = w * 100f
-        val postScaleY = h * 100f
-        if (isPortrait) {
-            filter.setScale(postScaleY, postScaleX)
-            filter.setPosition(100f - postPosY - postScaleY, postPosX)
+        val widthPct = cfg.width.coerceIn(1, 100).toFloat()
+        val heightPct = cfg.height.coerceIn(1, 100).toFloat()
+        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+        val frameAspect = streamWidth.toFloat() / streamHeight.toFloat()
+
+        // BoxFit.contain in frame-% space.
+        val hForW = widthPct * frameAspect / bitmapAspect
+        val finalW: Float
+        val finalH: Float
+        if (hForW <= heightPct) {
+            finalW = widthPct
+            finalH = hForW
         } else {
-            filter.setScale(postScaleX, postScaleY)
+            finalH = heightPct
+            finalW = heightPct * bitmapAspect / frameAspect
+        }
+
+        // Edge-anchor rules per axis (both-given or neither → center).
+        val maxPosX = (100f - finalW).coerceAtLeast(0f)
+        val maxPosY = (100f - finalH).coerceAtLeast(0f)
+        val postPosX = when {
+            cfg.left != null && cfg.right == null -> cfg.left.toFloat().coerceIn(0f, maxPosX)
+            cfg.right != null && cfg.left == null -> (100f - finalW - cfg.right.toFloat()).coerceIn(0f, maxPosX)
+            else -> maxPosX / 2f
+        }
+        val postPosY = when {
+            cfg.top != null && cfg.bottom == null -> cfg.top.toFloat().coerceIn(0f, maxPosY)
+            cfg.bottom != null && cfg.top == null -> (100f - finalH - cfg.bottom.toFloat()).coerceIn(0f, maxPosY)
+            else -> maxPosY / 2f
+        }
+
+        if (isPortrait) {
+            filter.setScale(finalH, finalW)
+            filter.setPosition(100f - postPosY - finalH, postPosX)
+        } else {
+            filter.setScale(finalW, finalH)
             filter.setPosition(postPosX, postPosY)
         }
     }
