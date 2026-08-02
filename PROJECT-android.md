@@ -128,11 +128,11 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
   - `onDisconnect` → `{ type: disconnected, reason: "Server closed connection" }`
   - `onNewBitrate(bitrate)` → `{ type: bitrate, kbps: bitrate/1000 }`
   - `onAuthError` → `{ type: error, code: AUTH_ERROR, message: ... }`
-- [x] Accepts `onConnectedCallback` + `onDisconnectedCallback` lambdas so `CameraStreamManager` can react without coupling
+- [x] Accepts `onConnectedCallback`, `onDisconnectedCallback(reason)` + `onNewBitrateCallback(bitrate)` lambdas so `CameraStreamManager` can react without coupling
 
 ### M4.2 — Wire ConnectChecker into GenericStream ✅
 - [x] `CameraStreamManager` now holds `RtmpConnectChecker` (replaces M2/M3 no-op)
-- [x] `RtmpConnectChecker` created with lambdas: `onConnected → reconnectAttempt = 0`, `onDisconnected → scheduleReconnect()`
+- [x] `RtmpConnectChecker` created with lambdas: `onConnected → reconnectAttempt = 0`, `onDisconnected(reason) → scheduleReconnect(reason)`, `onNewBitrate(bitrate) → bitrateAdapter.adaptBitrate(...)`
 - [x] `setSink(EventChannel.EventSink?)` on `CameraStreamManager` delegates to checker
 
 ### M4.3 — Handle startStream MethodChannel Call ✅
@@ -141,7 +141,7 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
 
 ### M4.4 — Handle stopStream MethodChannel Call ✅
 - [x] `handleStopStream`: calls `manager.stopStream()`
-- [x] `CameraStreamManager.stopStream()`: sets `intentionalStop=true`, `cancelReconnect()`, `genericStream.stopStream()`
+- [x] `CameraStreamManager.stopStream()`: sets `intentionalStop=true`, resets `reconnectAttempt`, `genericStream.stopStream()` (also cancels an in-flight `reTry`)
 
 ### M4.5 — EventChannel Setup ✅
 - [x] Plugin stores `eventSink`; `onListen` → `cameraStreamManager?.setSink(events)`, `onCancel` → `setSink(null)`
@@ -151,10 +151,19 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
 - [ ] Deferred — test together with M2 preview verification on physical device
 
 ### M4.7 — Auto-Reconnect (Android) ✅
-- [x] `scheduleReconnect()` in `CameraStreamManager`: gated by `intentionalStop`; increments `reconnectAttempt`, fires `{ type: reconnecting, attempt: N }`, posts `startStream` via `Handler.postDelayed(3000ms)`
-- [x] After attempt 3 fails: fires `{ type: error, code: MAX_RECONNECT_EXCEEDED }`, resets counter
-- [x] `stopStream()` calls `cancelReconnect()` → removes pending `Runnable` from handler queue
+- [x] `scheduleReconnect(reason)` in `CameraStreamManager`: gated by `intentionalStop`; increments `reconnectAttempt`, fires `{ type: reconnecting, attempt: N }`, delegates the retry to `genericStream.getStreamClient().reTry(3000ms, reason)`
+- [x] Retry budget set via `getStreamClient().setReTries(3)` after each `prepareVideo` and again in `startStream()` (resets the library counter per session)
+- [x] When `reTry()` returns false (budget exhausted): fires `{ type: error, code: MAX_RECONNECT_EXCEEDED }`, resets counter, calls `stopStream()` to leave `StreamBase` startable
+- [x] `stopStream()` / `release()` set `intentionalStop` and call `genericStream.stopStream()`, which cancels any in-flight retry
 - [ ] Verify on device with server taken offline mid-stream
+
+**Crash fixed (field report, 2026-07-30):** the original implementation posted `genericStream.startStream(endpoint)` on a `Handler` 3s after disconnect. RootEncoder does not clear `StreamBase.isStreaming` when the socket drops, so the retry threw `IllegalStateException: Stream already started, stopStream before startStream again` on the main thread and killed the app. `StreamBaseClient.reTry()` reconnects the client in place on its own thread and never hits that guard — never call `startStream()` to reconnect.
+
+### M4.7b — Adaptive Bitrate (Android) ✅
+- [x] `BitrateAdapter` (`com.pedro.library.util`) in `CameraStreamManager`, listener → `genericStream.setVideoBitrateOnFly(bitrate)`
+- [x] `setMaxBitrate(videoBitrate)` + `reset()` applied in `applyStreamClientDefaults()` after every `prepareVideo`; `reset()` again on `startStream()`
+- [x] `RtmpConnectChecker.onNewBitrate` forwards to `bitrateAdapter.adaptBitrate(bitrate, getStreamClient().hasCongestion())`
+- Rationale: same field report showed ~2 min of `RtmpSender: Video/Audio frame discarded` before `IOException: Broken pipe` — uplink fell below the fixed 2 500 000 bps and the sender cache saturated. Bitrate now steps down under congestion instead of dropping frames until the server closes the socket.
 
 ### M4.8 — YouTube-Compliant Encoder Config, Orientation & Camera Pickers
 

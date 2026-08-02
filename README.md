@@ -23,6 +23,7 @@ A Flutter plugin for live RTMP broadcasting with **native GPU-composited overlay
 - Front/back camera switching
 - Audio mute/unmute
 - Auto-reconnect (3 attempts, 3-second delay)
+- Adaptive video bitrate — drops automatically when the uplink congests (Android)
 - Status stream: connected, disconnected, bitrate, error, reconnecting events
 
 ---
@@ -471,6 +472,24 @@ If the RTMP connection drops unexpectedly (network hiccup, server timeout), the 
 - Each attempt fires `RtmpStatusType.reconnecting` with `reconnectAttempt` set to the attempt number (1–3)
 - If all attempts fail, `RtmpStatusType.error` fires with `errorCode: "MAX_RECONNECT_EXCEEDED"`
 - Auto-reconnect is **disabled** when you call `stopStream()` explicitly
+
+On Android the retry is performed by RootEncoder's own stream client (`StreamBaseClient.reTry`), so the connection is re-established in place — the encoder, preview, and overlay filters are never torn down.
+
+---
+
+## Adaptive Bitrate (Android)
+
+The video bitrate you pass to `configure()` is a **ceiling**, not a fixed rate. While
+streaming, the plugin watches the RTMP sender cache; when the uplink cannot keep up it
+steps the video bitrate down (`setVideoBitrateOnFly`) and raises it again as headroom
+returns. This prevents the failure mode where the send cache saturates, frames are
+discarded, and the server eventually closes the connection.
+
+Practical consequences:
+
+- `RtmpStatusType.bitrate` events will vary during a stream — that is expected, not an error
+- Audio bitrate is unaffected (128 kbps AAC)
+- The rate never exceeds the `videoBitrate` you configured
 
 ---
 

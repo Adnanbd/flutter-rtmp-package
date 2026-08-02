@@ -2,8 +2,6 @@ package com.flutterrtmp.broadcaster.camera
 
 import android.content.Context
 import android.content.pm.ActivityInfo
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.TextureView
 import com.flutterrtmp.broadcaster.diag.DiagLogger
@@ -17,6 +15,7 @@ import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
 import com.pedro.encoder.input.video.CameraHelper
 import com.pedro.library.generic.GenericStream
+import com.pedro.library.util.BitrateAdapter
 import io.flutter.plugin.common.EventChannel
 
 class CameraStreamManager(
@@ -40,13 +39,19 @@ class CameraStreamManager(
 
     private val connectChecker = RtmpConnectChecker(
         onConnectedCallback = { reconnectAttempt = 0 },
-        onDisconnectedCallback = { scheduleReconnect() }
+        onDisconnectedCallback = { reason -> scheduleReconnect(reason) },
+        onNewBitrateCallback = { bitrate -> onNewBitrate(bitrate) }
     )
 
     val genericStream: GenericStream by lazy { GenericStream(context, connectChecker) }
     private var overlayFilterManager: OverlayFilterManager? = null
-    private val reconnectHandler = Handler(Looper.getMainLooper())
-    private var reconnectRunnable: Runnable? = null
+
+    // Drops video bitrate when the RTMP sender cache backs up, instead of letting
+    // RootEncoder discard frames until the server closes the socket.
+    private val bitrateAdapter = BitrateAdapter { bitrate ->
+        Log.d(TAG, "bitrateAdapter: video bitrate -> $bitrate")
+        genericStream.setVideoBitrateOnFly(bitrate)
+    }
 
     private var encWidth = 0
     private var encHeight = 0
@@ -93,6 +98,7 @@ class CameraStreamManager(
             Log.e(TAG, "initPreviewOnly prepare failed: video=$videoOk audio=$audioOk")
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
+        applyStreamClientDefaults(DEFAULT_BITRATE)
 
 if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
             try {
@@ -151,6 +157,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 Log.e(TAG, "configure prepare failed: video=$videoOk audio=$audioOk")
                 throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
             }
+            applyStreamClientDefaults(videoBitrate)
 
             if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
                 try {
@@ -357,6 +364,10 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 Log.d(TAG, "startStream: post-recovery filters=${genericStream.getGlInterface().filtersCount()}")
             }
         }
+        // setReTries also resets the library's internal retry counter for this session.
+        genericStream.getStreamClient().setReTries(MAX_RECONNECT_ATTEMPTS)
+        bitrateAdapter.reset()
+
         try {
             genericStream.startStream(rtmpEndpoint)
         } catch (t: Throwable) {
@@ -395,7 +406,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
     fun stopStream() {
         intentionalStop = true
-        cancelReconnect()
+        reconnectAttempt = 0
+        // stopStream() also cancels any in-flight reTry() inside the stream client.
         genericStream.stopStream()
     }
 
@@ -486,6 +498,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 Log.e(TAG, "reinitialize prepare failed: video=$videoOk audio=$audioOk")
                 return
             }
+            applyStreamClientDefaults(DEFAULT_BITRATE)
 
             encWidth = newWidth
             encHeight = newHeight
@@ -521,7 +534,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
     fun release() {
         intentionalStop = true
-        cancelReconnect()
+        reconnectAttempt = 0
         if (isPreviewReady) overlayFilterManager?.release(genericStream)
         if (genericStream.isOnPreview) genericStream.stopPreview()
         if (genericStream.isStreaming) genericStream.stopStream()
@@ -531,33 +544,49 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         isConfigured = false
     }
 
-    private fun scheduleReconnect() {
+    /**
+     * Reconnect through RootEncoder's own retry path.
+     *
+     * Do NOT call genericStream.startStream() here: the stream is still marked started
+     * after a socket drop, so StreamBase.startStream throws
+     * "Stream already started, stopStream before startStream again". reTry() reconnects
+     * the client in place on its own thread and never hits that guard.
+     */
+    private fun scheduleReconnect(reason: String) {
         if (intentionalStop) return
 
-        if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-            connectChecker.sendEvent(mapOf(
-                "type" to "error",
-                "code" to "MAX_RECONNECT_EXCEEDED",
-                "message" to "Failed to reconnect after $MAX_RECONNECT_ATTEMPTS attempts"
-            ))
+        val retrying = try {
+            genericStream.getStreamClient().reTry(RECONNECT_DELAY_MS, reason)
+        } catch (t: Throwable) {
+            DiagLogger.logError("RECONNECT_THREW", t.message ?: "reTry threw", t)
+            false
+        }
+
+        if (retrying) {
+            reconnectAttempt++
+            connectChecker.sendEvent(mapOf("type" to "reconnecting", "attempt" to reconnectAttempt))
+            DiagLogger.log(TAG, "scheduleReconnect: attempt=$reconnectAttempt reason=$reason")
+        } else {
+            DiagLogger.log(TAG, "scheduleReconnect: retries exhausted after $reconnectAttempt reason=$reason")
+            emitErr("MAX_RECONNECT_EXCEEDED", "Failed to reconnect after $MAX_RECONNECT_ATTEMPTS attempts")
             reconnectAttempt = 0
-            return
+            // Leave StreamBase in a startable state so a later startStream() works.
+            runCatching { genericStream.stopStream() }
         }
-
-        reconnectAttempt++
-        connectChecker.sendEvent(mapOf("type" to "reconnecting", "attempt" to reconnectAttempt))
-
-        val runnable = Runnable {
-            if (!intentionalStop) {
-                genericStream.startStream(rtmpEndpoint)
-            }
-        }
-        reconnectRunnable = runnable
-        reconnectHandler.postDelayed(runnable, RECONNECT_DELAY_MS)
     }
 
-    private fun cancelReconnect() {
-        reconnectRunnable?.let { reconnectHandler.removeCallbacks(it) }
-        reconnectRunnable = null
+    private fun applyStreamClientDefaults(videoBitrate: Int) {
+        bitrateAdapter.setMaxBitrate(videoBitrate)
+        bitrateAdapter.reset()
+        genericStream.getStreamClient().setReTries(MAX_RECONNECT_ATTEMPTS)
+    }
+
+    private fun onNewBitrate(bitrate: Long) {
+        val congested = try {
+            genericStream.getStreamClient().hasCongestion()
+        } catch (t: Throwable) {
+            false
+        }
+        bitrateAdapter.adaptBitrate(bitrate, congested)
     }
 }

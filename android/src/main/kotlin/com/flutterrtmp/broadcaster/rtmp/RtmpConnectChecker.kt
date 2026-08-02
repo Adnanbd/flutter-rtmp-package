@@ -7,7 +7,8 @@ import io.flutter.plugin.common.EventChannel
 
 class RtmpConnectChecker(
     private val onConnectedCallback: () -> Unit,
-    private val onDisconnectedCallback: () -> Unit
+    private val onDisconnectedCallback: (reason: String) -> Unit,
+    private val onNewBitrateCallback: (bitrate: Long) -> Unit
 ) : ConnectChecker {
 
     private var _sink: EventChannel.EventSink? = null
@@ -44,16 +45,18 @@ class RtmpConnectChecker(
 
     override fun onConnectionFailed(reason: String) {
         sendEvent(mapOf("type" to "disconnected", "reason" to reason))
-        onDisconnectedCallback()
+        onDisconnectedCallback(reason)
     }
 
     override fun onDisconnect() {
-        sendEvent(mapOf("type" to "disconnected", "reason" to "Server closed connection"))
-        onDisconnectedCallback()
+        val reason = "Server closed connection"
+        sendEvent(mapOf("type" to "disconnected", "reason" to reason))
+        onDisconnectedCallback(reason)
     }
 
     override fun onNewBitrate(bitrate: Long) {
         sendEvent(mapOf("type" to "bitrate", "kbps" to bitrate / 1000))
+        onNewBitrateCallback(bitrate)
     }
 
     override fun onAuthError() {
