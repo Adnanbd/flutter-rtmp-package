@@ -61,6 +61,7 @@ class _CameraScreenState extends State<CameraScreen> {
         case RtmpStatusType.bitrate:
         case RtmpStatusType.reconnecting:
         case RtmpStatusType.previewBound:
+        case RtmpStatusType.previewUnbound:
         case RtmpStatusType.usbDetached:
           break;
       }

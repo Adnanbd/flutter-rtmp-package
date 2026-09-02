@@ -3,6 +3,7 @@ package com.flutterrtmp.broadcaster
 import android.app.Activity
 import android.content.Context
 import com.flutterrtmp.broadcaster.camera.CameraPreviewFactory
+import com.flutterrtmp.broadcaster.camera.CameraPreviewView
 import com.flutterrtmp.broadcaster.camera.CameraStreamManager
 import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
@@ -28,6 +29,9 @@ class FlutterRtmpBroadcasterPlugin :
     private var cameraStreamManager: CameraStreamManager? = null
     private var eventSink: EventChannel.EventSink? = null
     private var usbDeviceRegistry: UsbDeviceRegistry? = null
+    // The preview currently on screen. Needed by `rebindPreview`, which has to
+    // bind onto the same TextureView the platform view is showing.
+    private var previewView: CameraPreviewView? = null
 
     companion object {
         private const val METHOD_CHANNEL = "flutter_rtmp_broadcaster/control"
@@ -61,7 +65,11 @@ class FlutterRtmpBroadcasterPlugin :
 
         binding.platformViewRegistry.registerViewFactory(
             VIEW_TYPE,
-            CameraPreviewFactory { cameraStreamManager }
+            CameraPreviewFactory(
+                streamManagerProvider = { cameraStreamManager },
+                onViewCreated = { previewView = it },
+                onViewDisposed = { if (previewView === it) previewView = null }
+            )
         )
     }
 
@@ -74,6 +82,7 @@ class FlutterRtmpBroadcasterPlugin :
             "updateOverlay" -> handleUpdateOverlay(call, result)
             "updateSponsors" -> result.notImplemented()
             "switchCamera" -> handleSwitchCamera(call, result)
+            "rebindPreview" -> handleRebindPreview(result)
             "setAudioMute" -> handleSetAudioMute(call, result)
             "setAppOrientation" -> handleSetAppOrientation(call, result)
             "listUsbVideoDevices" -> handleListUsbVideoDevices(result)
@@ -82,6 +91,35 @@ class FlutterRtmpBroadcasterPlugin :
             "exportDiagnostics" -> result.success(DiagLogger.read())
             "clearDiagnostics" -> { DiagLogger.clear(); result.success(null) }
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * Re-attach the GL preview to the platform view currently on screen.
+     *
+     * The recovery step for a preview that survived a background/foreground cycle
+     * with a stale surface: cheaper than `initPreview` + `configure`, and it keeps
+     * the encoder and the RTMP session untouched.
+     */
+    private fun handleRebindPreview(result: Result) {
+        val manager = cameraStreamManager ?: run {
+            result.error("NO_MANAGER", "Camera not initialized", null)
+            return
+        }
+        val view = previewView ?: run {
+            result.error("NO_PREVIEW_VIEW", "No camera preview on screen", null)
+            return
+        }
+        if (!view.textureView.isAvailable) {
+            result.error("SURFACE_UNAVAILABLE", "Preview SurfaceTexture not available yet", null)
+            return
+        }
+        try {
+            manager.rebindPreview(view.textureView)
+            result.success(null)
+        } catch (e: Exception) {
+            DiagLogger.logError("REBIND_PREVIEW_ERROR", e.message ?: "rebindPreview failed", e)
+            result.error("REBIND_PREVIEW_ERROR", e.message ?: "rebindPreview failed", null)
         }
     }
 
@@ -309,6 +347,7 @@ class FlutterRtmpBroadcasterPlugin :
         cameraStreamManager = null
         usbDeviceRegistry?.destroy()
         usbDeviceRegistry = null
+        previewView = null
         eventSink = null
         context = null
     }

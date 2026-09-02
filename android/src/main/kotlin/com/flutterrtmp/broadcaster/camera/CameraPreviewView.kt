@@ -9,10 +9,13 @@ import io.flutter.plugin.platform.PlatformView
 
 class CameraPreviewView(
     context: Context,
-    private val streamManagerProvider: () -> CameraStreamManager?
+    private val streamManagerProvider: () -> CameraStreamManager?,
+    // Lets the plugin drop its handle when this view goes away, so a later
+    // `rebindPreview` never binds onto a disposed TextureView.
+    private val onDisposed: (CameraPreviewView) -> Unit = {}
 ) : PlatformView, TextureView.SurfaceTextureListener {
 
-    private val textureView = TextureView(context).also {
+    val textureView = TextureView(context).also {
         it.surfaceTextureListener = this
         it.layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -38,5 +41,6 @@ class CameraPreviewView(
 
     override fun dispose() {
         streamManagerProvider()?.unbindPreview()
+        onDisposed(this)
     }
 }

@@ -36,6 +36,8 @@ class MethodChannelBridge {
   Future<void> switchCamera(String facing) =>
       _channel.invokeMethod('switchCamera', {'facing': facing});
 
+  Future<void> rebindPreview() => _channel.invokeMethod('rebindPreview');
+
   Future<void> setAudioMute(bool muted) =>
       _channel.invokeMethod('setAudioMute', {'muted': muted});
 

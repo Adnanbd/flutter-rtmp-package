@@ -207,6 +207,14 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         DiagLogger.log(TAG, "bindPreview: isPreviewReady=$isPreviewReady isOnPreview=${genericStream.isOnPreview} src=$videoSourceClassName")
         if (!isPreviewReady) return
         try {
+            // Idempotent: StreamBase.startPreview throws "Preview already started"
+            // when it is already on preview. A resume can land here with a stale
+            // GL attachment (the app was backgrounded, the surface replaced), so
+            // drop the old one instead of turning the rebind into an error.
+            if (genericStream.isOnPreview) {
+                DiagLogger.log(TAG, "bindPreview: already on preview — stopping first to rebind")
+                genericStream.stopPreview()
+            }
             genericStream.startPreview(textureView)
             reapplyOverlaysIfNeeded("bindPreview")
             DiagLogger.log(TAG, "bindPreview: preview bound, sent previewBound event isOnPreview=${genericStream.isOnPreview}")
@@ -217,12 +225,21 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         }
     }
 
+    /**
+     * Force the preview back onto [textureView].
+     *
+     * Reachable from Dart (`rebindPreview` method call) so a screen returning from
+     * background can recover a stale preview without tearing the whole pipeline
+     * down with `initPreview` + `configure`.
+     *
+     * Delegates the second half to [bindPreview] on purpose: that is the only path
+     * that re-applies overlays *and* emits `previewBound`, which is how Dart learns
+     * the preview is live again.
+     */
     fun rebindPreview(textureView: TextureView) {
+        DiagLogger.log(TAG, "rebindPreview: isPreviewReady=$isPreviewReady isOnPreview=${genericStream.isOnPreview}")
         unbindPreview()
-        if (isPreviewReady) {
-            genericStream.startPreview(textureView)
-            reapplyOverlaysIfNeeded("rebindPreview")
-        }
+        bindPreview(textureView)
     }
 
     // Re-apply sponsor + scoreband overlays. Idempotent — `updateSponsors` and
@@ -241,8 +258,22 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         lastScorebandBytes?.let { mgr.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
     }
 
+    /**
+     * Release the GL preview and tell Dart about it.
+     *
+     * The event is what `RtmpBroadcastController.previewBound` needs to go back to
+     * false: it is only ever raised by the `previewBound` event and lowered inside
+     * `initPreview()`, so without this a background/foreground cycle leaves Dart
+     * believing a preview is bound when the surface underneath is gone.
+     *
+     * Emitted unconditionally — the point is the Dart-side flag, and a preview that
+     * was already off is still not bound.
+     */
     fun unbindPreview() {
-        if (genericStream.isOnPreview) genericStream.stopPreview()
+        val wasOnPreview = genericStream.isOnPreview
+        DiagLogger.log(TAG, "unbindPreview: isOnPreview=$wasOnPreview src=$videoSourceClassName")
+        if (wasOnPreview) genericStream.stopPreview()
+        connectChecker.sendEvent(mapOf("type" to "previewUnbound"))
     }
 
     private fun configureGlForOrientation(orientation: String) {
