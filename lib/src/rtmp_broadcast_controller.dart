@@ -22,9 +22,20 @@ class RtmpBroadcastController {
   StreamConfig? _config;
   StreamConfig get config => _config!;
 
+  /// Status events, minus the preview bind/unbind pair — those are folded into
+  /// [previewBound] instead of being pushed at every listener.
+  ///
+  /// [RtmpStatusType.previewUnbound] is what keeps [previewBound] honest across a
+  /// background/foreground cycle: the Android surface is torn down while the app
+  /// is away, and without this event the flag would still read `true` on return,
+  /// with nothing behind it.
   Stream<RtmpStatus> get statusStream => _event.statusStream.where((s) {
         if (s.type == RtmpStatusType.previewBound) {
           previewBound.value = true;
+          return false;
+        }
+        if (s.type == RtmpStatusType.previewUnbound) {
+          previewBound.value = false;
           return false;
         }
         return true;
@@ -99,6 +110,24 @@ class RtmpBroadcastController {
     try {
       await _method.switchCamera(
           facing == CameraFacing.front ? 'front' : 'back');
+    } on PlatformException catch (e) {
+      throw RtmpBroadcasterException(e.code, e.message ?? '');
+    }
+  }
+
+  /// Re-attach the GL preview to the platform view currently on screen.
+  ///
+  /// For recovering a preview that went stale while the app was backgrounded,
+  /// without the cost of `initPreview` + `configure` — the encoder, the overlay
+  /// filters and any running RTMP session are left alone. [previewBound] goes
+  /// true again through the usual event once the native side rebinds.
+  ///
+  /// Throws `NO_PREVIEW_VIEW` when no preview is mounted and
+  /// `SURFACE_UNAVAILABLE` when its SurfaceTexture is not ready yet; both mean
+  /// "wait for the view, or fall back to a full re-init".
+  Future<void> rebindPreview() async {
+    try {
+      await _method.rebindPreview();
     } on PlatformException catch (e) {
       throw RtmpBroadcasterException(e.code, e.message ?? '');
     }
