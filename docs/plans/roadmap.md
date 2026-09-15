@@ -1,6 +1,7 @@
-# PROJECT.md — flutter_rtmp_broadcaster
+# Roadmap — flutter_rtmp_broadcaster
 
-> Platform-specific milestones: [`PROJECT-android.md`](PROJECT-android.md) (M2–M4) | [`PROJECT-ios.md`](PROJECT-ios.md) (M5–M7)
+> Shared milestones (M1, M8–M10). Platform milestones: [android.md](android.md) (M2–M4) · [ios.md](ios.md) (M5–M7).
+> Contracts live in [../specs/](../specs/); rationale in [../decisions/](../decisions/). This file tracks **progress only**.
 
 ## Project Goal
 
@@ -11,11 +12,23 @@ and broadcasts the result via RTMP.
 
 ---
 
-## Current State (2026-04-23)
+## Current State (2026-09-15)
 
-**M1–M4 code-complete; physical device verification deferred.** Three cross-channel/API bugs fixed: (1) `handleConfigure` now reads `rtmpEndpoint` (Dart sends combined key) instead of separate `rtmpUrl`/`rtmpKey`; (2) `SponsorConfig.fromMap` now reads `width`/`height` matching `OverlayPosition.toMap()`; (3) `CameraStreamManager.configure` was calling `prepareVideo(w, h, fps, bitrate)` — RootEncoder's signature is `prepareVideo(w, h, bitrate, fps, …)`, so bitrate was being set to 30 bps and fps to 2_500_000. Fixed by swapping arg order, and `prepare` failures now throw instead of silently logging. Example app rewritten with full Android test UI.
+**Android: feature-complete, field-tested.** Beyond the original M2–M4 scope it now has:
+- edge-anchored sponsor placement and dynamic scoreband position (2026-05-14)
+- UVC camera + USB audio sources
+- diagnostics log (export/clear)
+- auto-reconnect via `reTry` + adaptive bitrate (2026-07-30 field fix)
+- observable, recoverable preview bind/unbind with `rebindPreview` (2026-09-02)
 
-Next: physical device test on Android, then M5 — iOS camera + preview (HaishinKit MediaMixer).
+**iOS: not started.** `ios/Classes/FlutterRtmpBroadcasterPlugin.swift` is still the `flutter create` stub.
+
+**Open gaps:**
+- `updateSponsors` returns `notImplemented` on Android.
+- M8 audits are not done.
+- M10 polish is not done (doc comments, CHANGELOG 0.1.0, publish dry-run).
+
+Next: M5 — iOS camera + preview (see `ios-port` skill).
 
 ---
 
@@ -23,12 +36,12 @@ Next: physical device test on Android, then M5 — iOS camera + preview (Haishin
 
 ```
 M1  — Package Scaffold & Dart API          [DONE]
-M2  — Android: Camera + Preview            [DONE] → PROJECT-android.md
-M3  — Android: Overlay Compositing         [DONE] → PROJECT-android.md
-M4  — Android: RTMP Broadcast              [DONE] → PROJECT-android.md
-M5  — iOS: Camera + Preview                [ ]    → PROJECT-ios.md
-M6  — iOS: Overlay Compositing             [ ]    → PROJECT-ios.md
-M7  — iOS: RTMP Broadcast                  [ ]    → PROJECT-ios.md
+M2  — Android: Camera + Preview            [DONE] → plans/android.md
+M3  — Android: Overlay Compositing         [DONE] → plans/android.md
+M4  — Android: RTMP Broadcast              [DONE] → plans/android.md
+M5  — iOS: Camera + Preview                [ ]    → plans/ios.md
+M6  — iOS: Overlay Compositing             [ ]    → plans/ios.md
+M7  — iOS: RTMP Broadcast                  [ ]    → plans/ios.md
 M8  — Scoreband Update Verification        [ ]
 M9  — Example App                          [ ]
 M10 — Polish, Error Handling & Docs        [ ]
@@ -193,63 +206,7 @@ Dart public API exists (even if it does nothing yet).
 
 ---
 
-## Dependency Summary
+## Dependencies & Decisions
 
-### Dart (`pubspec.yaml`)
-```yaml
-name: flutter_rtmp_broadcaster
-environment:
-  sdk: ">=3.10.0 <4.0.0"
-  flutter: ">=3.38.0"
-
-dependencies:
-  flutter:
-    sdk: flutter
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^6.0.0
-
-flutter:
-  plugin:
-    platforms:
-      android:
-        package: com.flutterrtmp.broadcaster
-        pluginClass: FlutterRtmpBroadcasterPlugin
-      ios:
-        pluginClass: FlutterRtmpBroadcasterPlugin
-```
-
-### Android (`android/build.gradle`)
-```
-repositories { maven { url 'https://jitpack.io' } }
-dependencies {
-  implementation 'com.github.pedroSG94.RootEncoder:library:2.7.2'
-}
-```
-
-### iOS (`ios/flutter_rtmp_broadcaster.podspec`)
-```ruby
-s.dependency 'HaishinKit', '~> 2.2'
-s.ios.deployment_target = '14.0'  # verify/raise to match HaishinKit 2.2.5 requirement
-```
-
----
-
-## Key Decisions Log (Do Not Change Without Review)
-
-| Decision | Reason |
-|---|---|
-| Scoreband is push-based, not polled | Score changes are event-driven; polling wastes CPU and bridge bandwidth |
-| Sponsors sent once at configure() | They don't change; batching them in configure avoids repeated channel calls |
-| Package owns camera 100% | Prevents camera session conflicts with Flutter `camera` package |
-| Normalized positions (0.0–1.0) in Dart | Resolution-agnostic; native converts to pixels using stream dimensions |
-| Default resolution 720×1280 (portrait) | `StreamConfig.defaultConfig = youtube720Portrait`; four presets available (720p/1080p × portrait/landscape), user selects on config screen before going live |
-| PNG format for scoreband bytes | Simple, lossless, universally decodable; at 0.3–0.5fps the cost is negligible |
-| No Timer.periodic in package | Push model is simpler, lower latency, and avoids capturing unchanged frames |
-| MethodChannel for overlay bytes | Simple and sufficient at 0.3fps; upgrade to BinaryCodec only if profiling shows need |
-| Android: `GenericStream` (not `RtmpCamera2`) | `RtmpCamera2` is superseded in RootEncoder 2.5+ by the `StreamBase` pattern; `GenericStream` is the forward-compatible entry point |
-| Android: plain `TextureView` (not `OpenGlView`) | `GenericStream` attaches preview to any `TextureView`/`SurfaceView` and handles the GL encoder surface internally |
-| iOS: HaishinKit `MediaMixer` + `StreamSession` | 2.x API is async/await and centralizes capture + mixing + publishing. `RTMPConnection` + `RTMPStream` direct usage is legacy |
-| iOS: `ScreenObject` for overlays (not manual CoreImage) | HaishinKit 2.x ships a built-in watermark/overlay primitive; rolling our own `CIContext.render` pipeline adds complexity and per-frame allocation risk |
+- Dependencies and versions: [../architecture/android.md](../architecture/android.md#dependencies-androidbuildgradle), [../architecture/ios.md](../architecture/ios.md).
+- Key decisions (formerly a table here): [../decisions/](../decisions/README.md). Do not change without a new ADR.

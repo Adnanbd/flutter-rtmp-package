@@ -1,3 +1,7 @@
+# Reference — Original sponsor placement request (2026-05-14)
+
+> Historical requirement note. Current contract: [../specs/overlay-compositing.md](../specs/overlay-compositing.md#sponsor-placement) · ADR [0005](../decisions/0005-sponsor-placement-edge-anchors.md).
+
 New Sponsor Chnages: 
 remove x and y - 
 new param: 

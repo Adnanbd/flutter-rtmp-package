@@ -1,52 +1,10 @@
-# PROJECT-ios.md — flutter_rtmp_broadcaster (iOS)
+# iOS Milestones (M5–M7) — flutter_rtmp_broadcaster
 
-> For shared milestones (M1, M8–M10), dependency summary, and key decisions see `PROJECT.md`.
-> For Android milestones (M2–M4) and Android technical notes see `PROJECT-android.md`.
+> Shared milestones: [roadmap.md](roadmap.md) · Android: [android.md](android.md).
+> Target design: [../architecture/ios.md](../architecture/ios.md). Orientation research: [../specs/orientation.md](../specs/orientation.md#ios-not-implemented--research-for-m5).
+> Parity contract: [../specs/channel-contract.md](../specs/channel-contract.md). Workflow: `ios-port` skill.
 
----
-
-## Native Stack
-
-- **RTMP + capture:** HaishinKit `2.2.5` (CocoaPods: `s.dependency 'HaishinKit', '~> 2.2'`).
-- **Pipeline:** `MediaMixer(captureSessionMode: .manual, multiTrackAudioMixingEnabled: true)` owns `AVCaptureSession`. Publishing goes through a `StreamSession` built via `StreamSessionBuilderFactory.shared.make(url).build()`; the mixer's output is attached to the session. APIs are async/await.
-- **Camera:** `mixer.attachVideo(AVCaptureDevice)` — HaishinKit selects the correct `AVCaptureDeviceInput` and wires it to the `AVCaptureVideoDataOutput` internally.
-- **Preview:** `AVCaptureVideoPreviewLayer` attached to the `MediaMixer`'s capture session, hosted in a `UIView` → `FlutterPlatformView`.
-- **Compositing:** HaishinKit's built-in `ScreenObject` (watermark/overlay primitive) — one per layer.
-- **Audio:** `mixer.attachAudio(AVCaptureDevice)` → routed into the stream session automatically.
-
-**Per-frame flow (library-internal, not our code):**
-```
-AVCaptureSession → MediaMixer (compositing ScreenObjects) → StreamSession → RTMP server
-```
-
-### Dependency (`ios/flutter_rtmp_broadcaster.podspec`)
-```ruby
-s.dependency 'HaishinKit', '~> 2.2'
-s.ios.deployment_target = '14.0'  # verify/raise to match HaishinKit 2.2.5 requirement
-```
-
----
-
-## Orientation Handling (iOS)
-
-**Core principle:** Camera always captures in portrait (UI stays portrait). For landscape streaming, different output dimensions (1280×720) and rotation applied at encoder level.
-
-**User flow:**
-- User selects "Landscape" in dropdown
-- Physical phone rotation required (sensor auto-rotate OFF)
-- Camera preview stays portrait (no change)
-- Stream output: 1280×720 dimension, no rotation
-
-**HaishinKit equivalent settings to research:**
-- `StreamSession` / `MediaMixer` orientation API
-- Rotation equivalent to `setOrientation(270)` for landscape
-- Whether reconfiguration needed on orientation change
-
-**Testing checklist:**
-- [ ] Portrait video fills screen
-- [ ] Landscape video fills screen
-- [ ] No unwanted rotation in landscape
-- [ ] Dimension correct in both modes
+**Status (2026-09-15): not started.** Plugin is the `flutter create` stub; podspec already declares `HaishinKit ~> 2.2`, deployment target 14.0.
 
 ---
 
@@ -56,7 +14,7 @@ s.ios.deployment_target = '14.0'  # verify/raise to match HaishinKit 2.2.5 requi
 HaishinKit `MediaMixer` so the same pipeline can later publish.
 
 ### M5.1 — Add HaishinKit
-- [ ] Add `s.dependency 'HaishinKit', '~> 2.2'` to `ios/flutter_rtmp_broadcaster.podspec`
+- [x] Add `s.dependency 'HaishinKit', '~> 2.2'` to `ios/flutter_rtmp_broadcaster.podspec`
 - [ ] Run `cd example/ios && pod install` and verify `import HaishinKit` compiles
 - [ ] Confirm iOS deployment target satisfies HaishinKit 2.2.5 (bump to 14.0 / 15.0 if needed)
 
@@ -106,7 +64,7 @@ HaishinKit `MediaMixer` so the same pipeline can later publish.
   - `weak var mixer: MediaMixer?`
   - `var sponsorObjects: [ScreenObject] = []`
   - `var scorebandObject: ScreenObject?`
-  - `let streamSize = CGSize(width: 1280, height: 720)`
+  - stream size from configured `StreamConfig` dims (not hardcoded 1280×720)
 - [ ] `func configureSponsors(_ sponsors: [SponsorConfig]) async throws`
   - For each sponsor: `UIImage(data:)` → `CGImage`
   - Create `ScreenObject`, set `contents = cgImage`, set frame (normalized → pixel) using `streamSize`

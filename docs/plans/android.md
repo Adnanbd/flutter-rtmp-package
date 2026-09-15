@@ -1,39 +1,10 @@
-# PROJECT-android.md — flutter_rtmp_broadcaster (Android)
+# Android Milestones (M2–M4) — flutter_rtmp_broadcaster
 
-> For shared milestones (M1, M8–M10), dependency summary, and key decisions see `PROJECT.md`.
-> For iOS milestones (M5–M7) see `PROJECT-ios.md`.
-
----
-
-## Current State (2026-04-23)
-
-**M1–M4 code-complete; physical device verification deferred.** Three cross-channel/API bugs fixed: (1) `handleConfigure` now reads `rtmpEndpoint` (Dart sends combined key) instead of separate `rtmpUrl`/`rtmpKey`; (2) `SponsorConfig.fromMap` now reads `width`/`height` matching `OverlayPosition.toMap()`; (3) `CameraStreamManager.configure` was calling `prepareVideo(w, h, fps, bitrate)` — RootEncoder's signature is `prepareVideo(w, h, bitrate, fps, …)`, so bitrate was being set to 30 bps and fps to 2_500_000. Symptom: RTMP connected, preview worked, YouTube reported "Stream status: Good" with ~141 kbps (audio-only) and no video. Fixed by swapping arg order, and `prepare` failures now throw instead of silently logging. Example app rewritten with full Android test UI: RTMP URL/key form → configure → camera preview → start/stop stream → status display → live scoreband capture-and-push loop.
-
-Next: physical device test of example app on Android, then M5 — iOS camera + preview (HaishinKit MediaMixer).
-
----
-
-## Native Stack
-
-- **RTMP:** RootEncoder `2.7.2` — artifact `com.github.pedroSG94.RootEncoder:library:2.7.2` (JitPack).
-- **Streaming pipeline:** `GenericStream(context, connectChecker)`. `RtmpCamera2` is deprecated — must NOT be used.
-- **Preview:** `TextureView` owned by `FlutterPlatformView`; attached via `genericStream.startPreview(textureView)`.
-- **Compositing:** `ImageObjectFilterRender` (bundled in RootEncoder, OpenGL ES GPU) — one instance per layer.
-- **Audio:** AAC via built-in microphone source + encoder (`prepareAudio()`).
-- **Config call order (critical):** `prepareVideo(...)` + `prepareAudio(...)` → `getGlInterface().addFilter(...)` for each layer → `startPreview(textureView)` → on start: `startStream(endpoint)`.
-
-**Render layer order (bottom → top):**
-```
-Camera frame → Sponsor_0 → Sponsor_1 → … → Scoreband
-```
-
-### Dependency (`android/build.gradle`)
-```
-repositories { maven { url 'https://jitpack.io' } }
-dependencies {
-  implementation 'com.github.pedroSG94.RootEncoder:library:2.7.2'
-}
-```
+> Shared milestones: [roadmap.md](roadmap.md) · iOS: [ios.md](ios.md).
+> Stack and class map: [../architecture/android.md](../architecture/android.md). Technical findings (coordinate space,
+> filter lifecycle, R8, orientation) moved to [../specs/overlay-compositing.md](../specs/overlay-compositing.md) and
+> [../specs/orientation.md](../specs/orientation.md). This file tracks **progress only**; checkbox text reflects the
+> implementation at the time and may describe superseded designs (see specs for current behavior).
 
 ---
 
@@ -224,97 +195,13 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
 
 ---
 
-## Android Scoreband Filter — Technical Notes (M3 follow-up, 2026-04-25)
+## Post-M4 work (no milestone number)
 
-Scoreband overlay rendering on Android is **working in both portrait and landscape**: visible bottom-center, ~90% stream width, real-time updates every 3 s, mirrored to YouTube via RTMP. The findings below are non-obvious, were established empirically against `pedroSG94/RootEncoder@2.7.2`, and are required reading before touching `OverlayFilterManager.kt`, adding new resolutions, upgrading RootEncoder, or porting to iOS.
-
-### Filter coordinate space (PRE-rotation)
-
-`ImageObjectFilterRender` renders into the **camera-native (landscape) frame** — filters are applied **before** `setStreamRotation` rotates the composite for the encoder. So `setScale` / `setPosition` on the filter operate in landscape pixel space regardless of the configured stream orientation.
-
-```
-camera frame (landscape) → [filters apply here] → setStreamRotation → encoder/preview
-```
-
-If you're seeing an overlay land in the wrong corner, "rotated 90°", or "shrunk and tilted", the cause is almost always: position/scale computed in post-rotation coords without the inverse transform.
-
-### `Sprite.scale(x, y)` / `translate(x, y)` units
-
-Both are **0–100% of the frame**, not NDC, not normalized 0–1.
-
-```kotlin
-filter.setScale(90f, 6.69f)       // 90% of frame width × 6.69% of frame height
-filter.setPosition(5f, 89.31f)    // top-left at 5% from left, 89.31% from top
-```
-
-Sprite origin: (0, 0) = top-left, (100, 100) = bottom-right.
-
-### Stream rotation values (only two used)
-
-| `setStreamRotation` arg | Visual effect | When |
-|---|---|---|
-| `0` | none — pre frame == post frame (1280×720) | Landscape mode (`setStreamIsPortrait(false)`) |
-| `270` | rotate **90° CCW** — pre 1280×720 → post 720×1280 | Portrait mode (`setStreamIsPortrait(true)`) |
-
-Direction (CCW) was determined empirically; the integer `270` alone is ambiguous between CW/CCW conventions.
-
-### Portrait bitmap + position transform
-
-For portrait, the captured PNG must be **pre-rotated +90° CW** before `setImage()` so the frame's 90° CCW rotation cancels back to upright. Scale and position must be transformed from desired post-rotation coords to pre-rotation coords:
-
-| Pre-rotation value | Formula |
-|---|---|
-| `pre.scaleX` | `post.scaleY` |
-| `pre.scaleY` | `post.scaleX` |
-| `pre.posX` | `100 − post.posY − post.scaleY` |
-| `pre.posY` | `post.posX` |
-
-Worked example — 1408×186 PNG, target bottom-center on 720×1280 portrait stream:
-- Post: `scale=(90, 6.69)`, `pos=(5, 89.31)`
-- Pre:  `scale=(6.69, 90)`, `pos=(4.0, 5)` → vertical strip on right edge of landscape pre frame, becomes bottom horizontal bar after 90° CCW rotation.
-
-Landscape mode skips both the bitmap rotation and the swap — pre == post.
-
-### Filter lifecycle: `addFilter` vs `setImage` order matters
-
-A filter added via `glInterface.addFilter(filter)` **before** `setImage()` may end up with an unbound GL texture; subsequent `setImage()` calls do not always re-bind. Canonical order, matching the official RootEncoder sample:
-
-```kotlin
-val f = ImageObjectFilterRender()
-f.setImage(bitmap)
-f.setScale(...)
-f.setPosition(...)
-glInterface.addFilter(f)
-```
-
-We use this for sponsors, and we lazy-create the scoreband filter on first `updateScoreband()` for the same reason. Don't preallocate filters with placeholder/empty bitmaps.
-
-### Capture-side timing (Flutter)
-
-`RepaintBoundary.toImage(pixelRatio: 2.0)` works fine even with the widget positioned off-screen (`bottom: -10000`) as long as:
-
-- `Opacity` is non-zero at capture time (set to `1.0` while streaming so capture sees real pixels).
-- `boundary.debugNeedsPaint` is checked and `WidgetsBinding.instance.endOfFrame` is awaited if needed.
-
-Already implemented in `example/lib/main.dart:_pushScoreband`. Do not regress.
-
-### Files of record
-
-- `android/src/main/kotlin/com/flutterrtmp/broadcaster/overlay/OverlayFilterManager.kt` — `updateScoreband`, `orientBitmap`, `applySponsorPosition` carry the implementation.
-- `android/src/main/kotlin/com/flutterrtmp/broadcaster/camera/CameraStreamManager.kt` — `configureGlForOrientation` sets `setStreamRotation` / `setStreamIsPortrait`; the `isPortrait` flag flows from here into `OverlayFilterManager`'s constructor.
-
-### R8 / ProGuard — overlays vanish in release (2026-05-07)
-
-Symptom: stream connects in release/AAB builds, sponsors and scoreband both fail to render together. Root cause: R8 mangles RootEncoder internals (`com.pedro.encoder.input.gl.render.filters.object.ImageObjectFilterRender` and GL-thread dispatch), so every `glInterface.addFilter()` silently no-ops. Fix lives in `android/consumer-rules.pro` — keeps `com.pedro.**` plus the plugin's own `rtmp` and `overlay` packages. Rules propagate to consumer apps via `consumerProguardFiles 'consumer-rules.pro'` in `android/build.gradle`. Do not narrow these keeps without testing a real release/AAB build with overlays.
-
-### Loud overlay failures (2026-05-07)
-
-`OverlayFilterManager.updateScoreband()` now throws (`OVERLAY_NOT_INITIALIZED` / `OVERLAY_DECODE_FAILED`) instead of returning silently. `CameraStreamManager.updateScoreband()` catches, emits an `error` event on the EventChannel, and rethrows so the plugin's MethodChannel handler returns a `PlatformException` to Dart. Sponsor decode failures in `initLayers()` and `updateSponsors()` upgraded from `Log.w` to `Log.e` with byte size. Silent overlay failures are now impossible to miss in release builds where `Log.w` may be stripped.
-
-### For iOS port (M5–M6)
-
-Re-verify each finding against HaishinKit `ScreenObject`; do not assume Android answers carry over:
-
-- Does `ScreenObject` render in pre- or post-rotation space inside `MediaMixer`?
-- What are the units of `ScreenObject.frame` / position — pixels, normalized 0–1, or percentage?
-- Does HaishinKit handle bitmap orientation automatically based on `videoOrientation`, or does the captured PNG need explicit pre-rotation as on Android?
+- [x] UVC camera + USB audio sources — [../specs/usb-sources.md](../specs/usb-sources.md)
+- [x] Diagnostics log (`exportDiagnostics` / `clearDiagnostics`) — [../specs/diagnostics.md](../specs/diagnostics.md)
+- [x] Loud overlay failures + `warning` events (2026-05-07)
+- [x] R8 consumer rules for overlays in release builds (2026-05-07)
+- [x] `SponsorPlacement` edge anchors + dynamic scoreband `width/x/y` (2026-05-14) — ADR 0005
+- [x] Preview bind/unbind observable + `rebindPreview` (2026-09-02)
+- [ ] `updateSponsors` native implementation (currently `notImplemented`)
+- [ ] Physical device verification of reconnect with server taken offline (M4.7)
