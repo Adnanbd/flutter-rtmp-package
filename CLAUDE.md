@@ -33,7 +33,7 @@ Path-specific rules load automatically from `.claude/rules/` when you touch `lib
 - Track work in the milestone plan: keep its "Resume here" box and checkboxes current as work lands.
 - Dynamic overlays, carousel and zoom (M11–M13) are Android only; iOS parity backlog in `docs/plans/ios.md`.
 - No device spikes. Device checks are batched at the end of a milestone; until they pass, docs say "not device-verified".
-- Branch `feature/dynamic-overlays` holds M11–M13. **The user commits manually**: don't commit, push, tag or merge unless asked. Merge only on approval.
+- M11–M13 merged to `main` 2026-09-15 (not published to pub.dev). **The user commits manually**: don't commit, push, tag, merge or publish unless asked. Merge only on approval.
 - Every new capability gets an example hook usable before and during a stream, with mock data (Overlay Studio / Go Live screen).
 
 ## Where to look

@@ -7,8 +7,8 @@
 
 | | |
 |---|---|
-| **Status** | **P2–P9 done and device-verified 2026-09-15** (user, physical Android phone, output stream): every End-of-M11 check passed. Only exception: orientation flip / re-`configure` with overlays, which the example UI can't reach (unit tests cover it). Code uncommitted — user commits manually. |
-| **Next step** | P10: `sync-docs` + `release-check` passed 2026-09-15; user commits, then merge on user approval (together with M12/M13, see [carousel-and-zoom.md](carousel-and-zoom.md)). |
+| **Status** | **P2–P9 done and device-verified 2026-09-15** (user, physical Android phone, output stream): every End-of-M11 check passed. Only exception: orientation flip / re-`configure` with overlays, which the example UI can't reach (unit tests cover it). **P10 done: merged to `main` 2026-09-15** with M12/M13 (user approval; not published to pub.dev). |
+| **Next step** | none — M11 complete. Follow-ups tracked in [carousel-and-zoom.md](carousel-and-zoom.md) (UVC zoom) and [ios.md](ios.md) (iOS parity). |
 | **Blockers** | none |
 | **Last updated** | 2026-09-15 |
 
@@ -178,7 +178,7 @@ count and the last event. Every check works before and during a stream. Results 
 - [x] spec DRAFT banner removed after device checks (`dynamic-overlays.md`, `camera-zoom.md`); README, CHANGELOG, ADR statuses updated 2026-09-15
 - [x] `overlay-compositing.md`: pointer to ADR 0015 for dynamic layers
 - [x] roadmap M11 ticked; `sync-docs` + `release-check` skills (2026-09-15)
-- [ ] merge to main **only on user approval**
+- [x] merge to main **only on user approval** — merged 2026-09-15
 
 ---
 

@@ -8,8 +8,8 @@
 
 | | |
 |---|---|
-| **Status** | **C0–C5 + Z1–Z5 done; device checks passed 2026-09-15 (user) except UVC camera zoom** (no USB camera tested; not a merge blocker, user 2026-09-15). `sync-docs` + `release-check` passed 2026-09-15. Code uncommitted — user commits manually. Kotlin 126 + Dart 50 + example 3 tests pass. |
-| **Next step** | User commits, then merge to `main` on user approval. UVC camera zoom check (section E) after merge, when a USB camera is available. |
+| **Status** | **C0–C5 + Z1–Z5 done; device checks passed 2026-09-15 (user) except UVC camera zoom** (no USB camera tested; not a merge blocker, user 2026-09-15). `sync-docs` + `release-check` passed 2026-09-15. **Merged to `main` 2026-09-15** (user approval; not published to pub.dev). Kotlin 126 + Dart 50 + example 3 tests pass. |
+| **Next step** | UVC camera zoom check (section E) when a USB camera is available. |
 | **Blockers** | none |
 | **Last updated** | 2026-09-15 |
 
@@ -106,7 +106,7 @@ process ADR [0020](../decisions/0020-working-agreements-m11-m13.md) (Android onl
 
 **Finish**
 - [x] `sync-docs`, `release-check` (2026-09-15)
-- [ ] merge only on user approval
+- [x] merge only on user approval — merged to `main` 2026-09-15
 
 ---
 

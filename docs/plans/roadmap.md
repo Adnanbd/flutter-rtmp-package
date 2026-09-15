@@ -21,7 +21,7 @@ and broadcasts the result via RTMP.
 - auto-reconnect via `reTry` + adaptive bitrate (2026-07-30 field fix)
 - observable, recoverable preview bind/unbind with `rebindPreview` (2026-09-02)
 - YouTube-recommended preset bitrates, configured bitrate honored after `initPreview` (2026-09-15, ADR 0019)
-- dynamic overlays M11, sponsor carousel M12, camera zoom M13: device-verified 2026-09-15 (UVC camera zoom not yet, not a merge blocker); `release-check` passed 2026-09-15, merge pending
+- dynamic overlays M11, sponsor carousel M12, camera zoom M13: device-verified 2026-09-15 (UVC camera zoom not yet); merged to `main` 2026-09-15, not published to pub.dev
 
 Working agreements (Android-only scope, batched device checks, user commits manually, merge on approval): [ADR 0020](../decisions/0020-working-agreements-m11-m13.md).
 
@@ -32,7 +32,7 @@ Working agreements (Android-only scope, batched device checks, user commits manu
 - M8 audits are not done.
 - M10 polish is not done (doc comments, CHANGELOG 0.1.0, publish dry-run).
 
-Next: merge M11 dynamic overlays + M12 sponsor carousel + M13 camera zoom (Android), branch `feature/dynamic-overlays`, on user approval. Tracked in [dynamic-overlays.md](dynamic-overlays.md) and [carousel-and-zoom.md](carousel-and-zoom.md). Device checks passed 2026-09-15; UVC camera zoom untested and not a merge blocker. iOS (M5) paused.
+Next: UVC camera zoom check when a USB camera is available ([carousel-and-zoom.md](carousel-and-zoom.md), section E). Publishing to pub.dev deferred (user, 2026-09-15). iOS (M5) paused.
 
 ---
 
