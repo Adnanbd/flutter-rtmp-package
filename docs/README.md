@@ -17,6 +17,7 @@ Start with the root [CLAUDE.md](../CLAUDE.md) (agent boot) or [README.md](../REA
 | Add or change a channel method or event | [specs/channel-contract.md](specs/channel-contract.md), [specs/dart-api.md](specs/dart-api.md) → skill `add-channel-method` |
 | Overlay wrong position, missing, or rotated | [specs/overlay-compositing.md](specs/overlay-compositing.md) → skill `debug-overlay` |
 | Portrait/landscape or GL rotation | [specs/orientation.md](specs/orientation.md) → skill `orientation-change` |
+| Dynamic overlays (M11, in progress) | [plans/dynamic-overlays.md](plans/dynamic-overlays.md) (resume box) → [specs/dynamic-overlays.md](specs/dynamic-overlays.md) |
 | Reconnect or bitrate behavior | [specs/reconnect-and-bitrate.md](specs/reconnect-and-bitrate.md) |
 | USB camera or mic | [specs/usb-sources.md](specs/usb-sources.md) |
 | Field bug from a release build | [specs/diagnostics.md](specs/diagnostics.md) |
@@ -30,9 +31,9 @@ Start with the root [CLAUDE.md](../CLAUDE.md) (agent boot) or [README.md](../REA
 ```
 docs/
 ├── specs/          channel-contract · dart-api · overlay-compositing · orientation
-│                   reconnect-and-bitrate · usb-sources · diagnostics
+│                   reconnect-and-bitrate · usb-sources · diagnostics · dynamic-overlays (draft)
 ├── architecture/   overview · android · ios (target design)
-├── decisions/      0001–0013 ADRs + template
-├── plans/          roadmap (M1, M8–M10) · android (M2–M4) · ios (M5–M7)
+├── decisions/      0001–0014 ADRs + template
+├── plans/          roadmap (M1, M8–M11) · android (M2–M4) · ios (M5–M7) · dynamic-overlays (M11)
 └── reference/      youtube-rtmp · youtube-latency · sponsor-placement-request
 ```

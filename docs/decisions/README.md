@@ -20,3 +20,4 @@ Template: copy [0000-template.md](0000-template.md), take the next number.
 | [0011](0011-android-reconnect-via-retry.md) | Android: reconnect via `StreamClient.reTry`, never `startStream` | Accepted |
 | [0012](0012-ios-mediamixer-streamsession.md) | iOS: HaishinKit `MediaMixer` + `StreamSession` via CocoaPods | Accepted |
 | [0013](0013-ios-screenobject-overlays.md) | iOS: `ScreenObject` overlays, no manual CoreImage | Accepted |
+| [0014](0014-layer-stack-weights.md) | Single layer stack with 0–100 weights for all overlays | Accepted |

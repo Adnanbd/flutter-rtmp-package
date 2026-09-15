@@ -28,7 +28,7 @@ and broadcasts the result via RTMP.
 - M8 audits are not done.
 - M10 polish is not done (doc comments, CHANGELOG 0.1.0, publish dry-run).
 
-Next: M5 — iOS camera + preview (see `ios-port` skill).
+Next: M11 — dynamic overlays (Android), branch `feature/dynamic-overlays`, tracked in [dynamic-overlays.md](dynamic-overlays.md). iOS (M5) paused.
 
 ---
 
@@ -45,6 +45,7 @@ M7  — iOS: RTMP Broadcast                  [ ]    → plans/ios.md
 M8  — Scoreband Update Verification        [ ]
 M9  — Example App                          [ ]
 M10 — Polish, Error Handling & Docs        [ ]
+M11 — Dynamic Overlays (Android)           [~]    → plans/dynamic-overlays.md
 ```
 
 ---

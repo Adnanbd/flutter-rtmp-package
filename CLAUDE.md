@@ -42,6 +42,7 @@ Path-specific rules load automatically from `.claude/rules/` when you touch `lib
 | iOS target design | `docs/architecture/ios.md` |
 | Why a choice was made | `docs/decisions/` (ADRs) |
 | Progress and next steps | `docs/plans/roadmap.md`, `android.md`, `ios.md` |
+| **Active work: dynamic overlays (M11)** | `docs/plans/dynamic-overlays.md` — read its "Resume here" box first |
 | Package user docs | `README.md` |
 
 ## Skills (`.claude/skills/`)
