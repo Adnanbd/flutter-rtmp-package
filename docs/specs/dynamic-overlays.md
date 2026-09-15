@@ -100,7 +100,9 @@ filter space exactly like legacy overlays (see [overlay-compositing.md](overlay-
 | `width` + `height` | BoxFit.contain inside that box |
 | only `width` | height from content aspect |
 | only `height` | width from content aspect |
-| neither | intrinsic content size in px (bitmap px = encoder px). If larger than the frame → contain in frame + warning `OVERLAY_DOWNSCALED` |
+| neither | intrinsic content size in px (bitmap px = encoder px) |
+
+Any resulting size larger than the frame (any of the rows above) is contained in the frame, with warning `OVERLAY_DOWNSCALED`.
 
 **Position, per axis** (same rules as `SponsorPlacement`):
 

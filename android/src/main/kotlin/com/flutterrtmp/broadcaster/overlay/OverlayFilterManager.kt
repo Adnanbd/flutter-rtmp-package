@@ -21,6 +21,7 @@ class OverlayFilterManager(
         private const val TAG = "OverlayFilterManager"
     }
 
+    private val frame = OverlayGeometry.FrameSize(streamWidth, streamHeight)
     private val sponsorFilters = mutableListOf<ImageObjectFilterRender>()
     private var scorebandFilter: ImageObjectFilterRender? = null
     private var streamRef: GenericStream? = null
@@ -70,37 +71,21 @@ class OverlayFilterManager(
             throw IllegalArgumentException("OVERLAY_DECODE_FAILED: scoreband PNG decode returned null (bytes=${pngBytes.size})")
         }
 
-        // Compute target placement in POST-rotation (stream output) frame.
-        // Dart supplies width (1-100), x (0-100: 0=left, 100=right), y (0-100: 0=top, 100=bottom).
-        // Height stays aspect-derived from bitmap.
-        val widthPct = widthParam.coerceIn(1f, 100f)
+        // Placement math lives in OverlayGeometry (post-rotation rect → pre-rotation filter transform).
+        val finalBitmap = orientBitmap(bitmap)
+        val rect = OverlayGeometry.scorebandRect(
+            widthParam, xParam, yParam,
+            bitmap.width.toFloat() / bitmap.height.toFloat(),
+            frame
+        )
+        val t = OverlayGeometry.toFilter(rect, isPortrait)
+        val scaleX = t.scaleX
+        val scaleY = t.scaleY
+        val posX = t.posX
+        val posY = t.posY
+        val widthPct = rect.w
         val xPct = xParam.coerceIn(0f, 100f)
         val yPct = yParam.coerceIn(0f, 100f)
-        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-        val postScaleX = widthPct
-        val postScaleY = (widthPct / 100f) * (streamWidth.toFloat() / streamHeight.toFloat()) / bitmapAspect * 100f
-        val postPosX = (xPct / 100f) * (100f - postScaleX)
-        val postPosY = (yPct / 100f) * (100f - postScaleY)
-
-        // Convert to PRE-rotation coords (where filter actually renders).
-        val finalBitmap = orientBitmap(bitmap)
-        val scaleX: Float
-        val scaleY: Float
-        val posX: Float
-        val posY: Float
-        if (isPortrait) {
-            // Frame rotates 90° CCW. Pre→Post: (xPre,yPre) → (yPre, Wpre-xPre).
-            // Pre-rect top-left (post-rotation top-left maps to pre x = Wpre-(postY+postScaleY)).
-            scaleX = postScaleY
-            scaleY = postScaleX
-            posX = 100f - postPosY - postScaleY
-            posY = postPosX
-        } else {
-            scaleX = postScaleX
-            scaleY = postScaleY
-            posX = postPosX
-            posY = postPosY
-        }
 
         val existing = scorebandFilter
         if (existing == null) {
@@ -160,50 +145,19 @@ class OverlayFilterManager(
         return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
     }
 
-    // Sponsor placement (post-rotation 0-100% frame). BoxFit.contain sizing + edge anchor rules.
-    // Pre/post rotation swap matches scoreband.
+    // Sponsor placement (post-rotation 0-100% frame): BoxFit.contain + edge anchors, via OverlayGeometry.
     private fun applySponsorPosition(
         filter: ImageObjectFilterRender,
         bitmap: Bitmap,
         cfg: SponsorConfig
     ) {
-        val widthPct = cfg.width.coerceIn(1, 100).toFloat()
-        val heightPct = cfg.height.coerceIn(1, 100).toFloat()
-        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-        val frameAspect = streamWidth.toFloat() / streamHeight.toFloat()
-
-        // BoxFit.contain in frame-% space.
-        val hForW = widthPct * frameAspect / bitmapAspect
-        val finalW: Float
-        val finalH: Float
-        if (hForW <= heightPct) {
-            finalW = widthPct
-            finalH = hForW
-        } else {
-            finalH = heightPct
-            finalW = heightPct * bitmapAspect / frameAspect
-        }
-
-        // Edge-anchor rules per axis (both-given or neither → center).
-        val maxPosX = (100f - finalW).coerceAtLeast(0f)
-        val maxPosY = (100f - finalH).coerceAtLeast(0f)
-        val postPosX = when {
-            cfg.left != null && cfg.right == null -> cfg.left.toFloat().coerceIn(0f, maxPosX)
-            cfg.right != null && cfg.left == null -> (100f - finalW - cfg.right.toFloat()).coerceIn(0f, maxPosX)
-            else -> maxPosX / 2f
-        }
-        val postPosY = when {
-            cfg.top != null && cfg.bottom == null -> cfg.top.toFloat().coerceIn(0f, maxPosY)
-            cfg.bottom != null && cfg.top == null -> (100f - finalH - cfg.bottom.toFloat()).coerceIn(0f, maxPosY)
-            else -> maxPosY / 2f
-        }
-
-        if (isPortrait) {
-            filter.setScale(finalH, finalW)
-            filter.setPosition(100f - postPosY - finalH, postPosX)
-        } else {
-            filter.setScale(finalW, finalH)
-            filter.setPosition(postPosX, postPosY)
-        }
+        val rect = OverlayGeometry.sponsorRect(
+            cfg.left, cfg.right, cfg.top, cfg.bottom, cfg.width, cfg.height,
+            bitmap.width.toFloat() / bitmap.height.toFloat(),
+            frame
+        )
+        val t = OverlayGeometry.toFilter(rect, isPortrait)
+        filter.setScale(t.scaleX, t.scaleY)
+        filter.setPosition(t.posX, t.posY)
     }
 }

@@ -7,8 +7,8 @@
 
 | | |
 |---|---|
-| **Status** | P0 done — contract + tracking committed |
-| **Next step** | P1 spikes need a physical Android device. If none is available, start P2 (pure Kotlin, no device) and run spikes when a device is attached. |
+| **Status** | P0, P2 done. `OverlayGeometry` extracted; legacy math proven identical by exact-float oracle tests |
+| **Next step** | P3 LayerStack (pure logic + GL wrapper, testable without device). P1 spikes still pending: need a **physical** Android device (only an emulator was attached on 2026-09-15). Run them before P6–P8. |
 | **Blockers** | none |
 | **Last updated** | 2026-09-15 |
 
@@ -53,9 +53,11 @@
 - [ ] S4 ticker: CPU window vs UV-offset shader at 120 px/s, 1280×90 band; Choreographer vs 30 fps encoder judder; long-paragraph tiling (GL max texture size) → ADR 0016
 
 ## P2 — Geometry extraction (no behavior change)
-- [ ] `overlay/OverlayGeometry.kt` pure Kotlin: contain + anchors + pre-rotation transform + `OverlayLength` (percent/px)
-- [ ] JVM tests pinning current sponsor + scoreband outputs (incl. 1408×186 @ 720×1280 → pre scale (6.69, 90) pos (4.0, 5))
-- [ ] `OverlayFilterManager` uses it; device check sponsor + scoreband unchanged
+- [x] `overlay/OverlayGeometry.kt` pure Kotlin: contain + anchors + pre-rotation transform + `Length` (percent/px) + `placementRect` for dynamic overlays
+- [x] JVM tests (`android/src/test/kotlin/.../overlay/OverlayGeometryTest.kt`, 14 tests): verbatim legacy formulas as oracle, exact float equality over a grid of frames × orientations × bitmaps × params; spec worked example; px/percent/contain/anchor/downscale cases
+- [x] `OverlayFilterManager` uses it (`applySponsorPosition`, `updateScoreband`)
+- [ ] device visual check sponsor + scoreband unchanged — folded into P3 device check (math already proven identical)
+- [x] removed stale `flutter create` Kotlin test that broke `testDebugUnitTest` compilation
 
 ## P3 — LayerStack + legacy weights
 - [ ] `overlay/LayerStack.kt` keyed `(weight, classRank, seq)`; `insert` / `remove` / `reorder` / `rebuild`
@@ -113,4 +115,5 @@
 ---
 
 ## Log
+- 2026-09-15 — P2: geometry extraction. Run Kotlin tests: `cd example/android && ./gradlew :flutter_rtmp_broadcaster:testDebugUnitTest` (first run needs network for mockito). `placementRect` downscales any oversize result (not only intrinsic) — spec §2 updated.
 - 2026-09-15 — P0: contract, tracking, ADR 0014 written after 5 rounds of requirement Q&A.
