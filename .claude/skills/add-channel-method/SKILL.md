@@ -31,15 +31,17 @@ in one change.
 - If still a stub: mark the method ❌ in the spec. Add an item under the right milestone in `docs/plans/ios.md`.
 
 ## 5. Tests
-- `test/rtmp_broadcast_controller_test.dart`: assert `calls.last.method` and `arguments` map.
+- `test/rtmp_broadcast_controller_test.dart` (or the feature file, e.g. `test/dynamic_overlay_test.dart`, `test/zoom_test.dart`): assert `calls.last.method` and `arguments` map, and Dart-side validation codes.
 - Model parsing → `test/models/`.
-- Run `flutter analyze` and `flutter test`.
+- Native logic belongs in a pure-Kotlin class (clock/scheduler injected) with a JVM test in `android/src/test/kotlin/…`.
+- Run `flutter analyze lib test`, `flutter test`, and `cd example/android && ./gradlew :flutter_rtmp_broadcaster:testDebugUnitTest`.
 
 ## 6. Docs (same change)
 - `docs/specs/channel-contract.md`: method row with Android/iOS status, arg keys, events, and error codes.
-- `docs/specs/dart-api.md`: controller table.
-- `README.md` API Reference: method table and error code table.
-- Example app hook if user-testable (`example/lib/screens/`).
+- `docs/specs/dart-api.md`: controller table. Feature spec too (`dynamic-overlays.md`, `camera-zoom.md`) when it applies.
+- `README.md`: controller method table, guide section with an example, `RtmpStatus`/`RtmpStatusType` tables for events, error/warning tables.
+- Example app hook, usable before and during a stream (ADR 0020): overlay features in `example/lib/overlay_studio/`, camera features on the Go Live screen.
+- `CHANGELOG.md`: note breaking changes for exhaustive `switch` (new `RtmpStatusType` values).
 - Then run skill `sync-docs`.
 
 ## Verify drift

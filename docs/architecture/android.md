@@ -16,13 +16,27 @@ kotlin/com/flutterrtmp/broadcaster/
 ├── camera/
 │   ├── CameraStreamManager.kt        Pipeline owner: GenericStream, GL orientation, overlays cache,
 │   │                                 reconnect, bitrate adapter, preview bind/unbind.
+│   ├── ZoomController.kt             Pure: requested zoom, wait-ready/verify/re-apply loop, zoomChanged; UvcZoomMath.
+│   ├── ZoomTargets.kt                Camera2ZoomTarget (RootEncoder Camera2Source), UvcZoomTarget (ADR 0017).
 │   ├── CameraPreviewFactory.kt       PlatformViewFactory; reports created/disposed views to plugin.
 │   └── CameraPreviewView.kt          TextureView; surface available → bindPreview, destroyed/dispose → unbindPreview.
 ├── overlay/
-│   ├── OverlayFilterManager.kt       One ImageObjectFilterRender per layer; pre-rotation math.
+│   ├── OverlayFilterManager.kt       One ImageObjectFilterRender per layer; DynamicLayerHost for one pipeline.
+│   ├── OverlayGeometry.kt            Pure math: contain, anchors, percent/px, pre-rotation transform.
+│   ├── LayerStack.kt / GlFilterSink.kt  Z-ordered stack (weight, class, seq) → GL filter indices.
+│   ├── DynamicOverlayController.kt   Dynamic overlay lifecycle (enter/exit, interruptions), expiry, ticker passes;
+│   │                                 outlives pipelines. Pure Kotlin.
+│   ├── DynamicOverlayModels.kt       overlay* channel args parser, content/animation models, OverlayException.
+│   ├── OverlayTimer.kt               Live-time accumulator per overlay.
+│   ├── OverlayAnimationMath.kt / TickerMath.kt / GifTimeline.kt / CarouselTimeline.kt   Pure motion math (JVM-tested).
+│   ├── OverlayContentDecoder.kt      Image/GIF decode, text render, TTF fonts, ticker metrics → OverlayVisual.
+│   ├── OverlayVisuals.kt             BitmapVisual, GifVisual, WrappedTextVisual, CarouselVisual, TickerVisual (Canvas drawing).
+│   ├── LayerRenderer.kt              Per-layer bitmap pool; draws a frame and publishes it (ADR 0015).
+│   ├── DynamicLayerFilter.kt         ImageObjectFilterRender subclass: non-recycling upload, GL-thread handoff.
+│   ├── ChoreographerFrameDriver.kt   Per-vsync onFrame while animating, throttled to encoder fps.
 │   └── SponsorConfig.kt              Channel map → data class.
 ├── rtmp/RtmpConnectChecker.kt        ConnectChecker → EventChannel (main thread, 32-event buffer).
-├── usb/                              UsbDeviceRegistry, UvcVideoSource, UsbAudioSource.
+├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource.
 └── diag/DiagLogger.kt                File log + uncaught handler.
 ```
 
@@ -50,7 +64,12 @@ Bug history: swapping `bitrate`/`fps` in `prepareVideo` gave 30 bps video → Yo
 | `isConfigured` | `configure` succeeded (endpoint known) |
 | `genericStream.isOnPreview` | preview surface bound |
 | `intentionalStop` | suppresses auto-reconnect |
-| `lastSponsors`, `lastScoreband*` | overlay cache re-applied after transitions |
+| `lastSponsors`, `lastScoreband*` | sponsor/scoreband cache, seeded into every new `OverlayFilterManager` via `newOverlayFilterManager` |
+| `dynamicOverlays` (`DynamicOverlayController`) | dynamic overlays; kept across rebind, orientation flip and `configure` re-prepare, lost with this manager (new `initPreview`) |
+| `zoom` (`ZoomController`) | requested zoom level; re-applied and verified after every camera open (`bindPreview`) |
+
+Kotlin JVM tests (pure classes: geometry, layer stack, timers, tickers, carousel, zoom, parser, controller):
+`cd example/android && ./gradlew :flutter_rtmp_broadcaster:testDebugUnitTest`.
 
 `handleConfigure` reuses the manager when `previewReady`; otherwise releases and creates fresh.
 `configure` re-prepares only when dims changed.

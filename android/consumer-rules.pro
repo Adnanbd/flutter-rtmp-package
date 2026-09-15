@@ -14,3 +14,7 @@
 # serenegiant USB camera — native methods called from libUVCCamera.so via
 # RegisterNatives; R8 can't see these callers.
 -keep class com.serenegiant.** { *; }
+
+# UVCCamera subclass used for zoom: libUVCCamera.so reads/writes inherited fields (mNativePtr, mZoomMin, …) on
+# this object via JNI, so the class itself must not be renamed or merged.
+-keep class com.flutterrtmp.broadcaster.usb.ZoomableUvcCamera { *; }

@@ -2,10 +2,18 @@ package com.flutterrtmp.broadcaster.camera
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
 import com.flutterrtmp.broadcaster.diag.DiagLogger
+import com.flutterrtmp.broadcaster.overlay.ChoreographerFrameDriver
+import com.flutterrtmp.broadcaster.overlay.DynamicOverlayController
+import com.flutterrtmp.broadcaster.overlay.OverlayContentDecoder
 import com.flutterrtmp.broadcaster.overlay.OverlayFilterManager
+import com.flutterrtmp.broadcaster.overlay.OverlayScheduler
+import com.flutterrtmp.broadcaster.overlay.OverlayVisual
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
 import com.flutterrtmp.broadcaster.rtmp.RtmpConnectChecker
 import com.flutterrtmp.broadcaster.usb.UsbAudioSource
@@ -29,7 +37,7 @@ class CameraStreamManager(
         private const val DEFAULT_PREVIEW_WIDTH = 1280
         private const val DEFAULT_PREVIEW_HEIGHT = 720
         private const val DEFAULT_FPS = 30
-        private const val DEFAULT_BITRATE = 2_500_000
+        private const val DEFAULT_BITRATE = 4_000_000
         private const val DEFAULT_KEYFRAME = 2
         private const val AUDIO_SAMPLE_RATE = 44100
         private const val AUDIO_BITRATE = 128_000
@@ -37,14 +45,58 @@ class CameraStreamManager(
         private const val RECONNECT_DELAY_MS = 3000L
     }
 
-    private val connectChecker = RtmpConnectChecker(
-        onConnectedCallback = { reconnectAttempt = 0 },
-        onDisconnectedCallback = { reason -> scheduleReconnect(reason) },
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // ConnectChecker callbacks arrive on the stream client's thread; overlay timers are main-thread only.
+    private val connectChecker: RtmpConnectChecker = RtmpConnectChecker(
+        onConnectedCallback = {
+            reconnectAttempt = 0
+            mainHandler.post { if (!intentionalStop) dynamicOverlays.setLive(true) }
+        },
+        onDisconnectedCallback = { reason ->
+            mainHandler.post { dynamicOverlays.setLive(false) }
+            scheduleReconnect(reason)
+        },
         onNewBitrateCallback = { bitrate -> onNewBitrate(bitrate) }
     )
 
     val genericStream: GenericStream by lazy { GenericStream(context, connectChecker) }
     private var overlayFilterManager: OverlayFilterManager? = null
+
+    private val overlayDecoder = OverlayContentDecoder(context.cacheDir)
+
+    private val mainScheduler = OverlayScheduler { delayMs, task ->
+        val r = Runnable(task)
+        mainHandler.postDelayed(r, delayMs)
+        ({ mainHandler.removeCallbacks(r) })
+    }
+
+    /**
+     * App-controlled overlays (docs/specs/dynamic-overlays.md). Outlives each OverlayFilterManager:
+     * every new manager is seeded from it via [newOverlayFilterManager].
+     */
+    val dynamicOverlays: DynamicOverlayController<OverlayVisual> = DynamicOverlayController(
+        decode = { content -> overlayDecoder.decode(content) },
+        emit = { event -> connectChecker.sendEvent(event) },
+        clock = { SystemClock.elapsedRealtime() },
+        scheduler = mainScheduler,
+        frames = ChoreographerFrameDriver(fps = { currentFps }) { dynamicOverlays.onFrame() }
+    )
+
+    /** Camera zoom (docs/specs/camera-zoom.md). Keeps the requested level across camera re-opens. */
+    val zoom = ZoomController(
+        target = {
+            when (val src = genericStream.videoSource) {
+                is Camera2Source -> Camera2ZoomTarget(src)
+                is UvcVideoSource -> UvcZoomTarget(src)
+                else -> null
+            }
+        },
+        emit = { event -> connectChecker.sendEvent(event) },
+        clock = { SystemClock.elapsedRealtime() },
+        scheduler = mainScheduler,
+        log = { DiagLogger.log(TAG, "zoom: $it") }
+    )
 
     // Drops video bitrate when the RTMP sender cache backs up, instead of letting
     // RootEncoder discard frames until the server closes the socket.
@@ -55,11 +107,18 @@ class CameraStreamManager(
 
     private var encWidth = 0
     private var encHeight = 0
+    private var currentFps = DEFAULT_FPS
+    /** Values the encoder was prepared with (prepareVideo can't run again while previewing). */
+    private var preparedBitrate = DEFAULT_BITRATE
+    private var preparedKeyframe = DEFAULT_KEYFRAME
+    /** configure() asked for a different bitrate than prepared: applied on the running encoder at every startStream. */
+    private var pendingBitrate: Int? = null
     private var currentIsPortrait: Boolean = true
     private var lastScorebandBytes: ByteArray? = null
     private var lastScorebandWidth: Float = 90f
     private var lastScorebandX: Float = 50f
     private var lastScorebandY: Float = 100f
+    private var lastScorebandWeight: Int = OverlayFilterManager.DEFAULT_SCOREBAND_WEIGHT
     private var lastSponsors: List<SponsorConfig> = emptyList()
     var rtmpEndpoint: String = ""
         private set
@@ -80,6 +139,8 @@ class CameraStreamManager(
         width: Int,
         height: Int,
         fps: Int,
+        videoBitrate: Int,
+        keyframeIntervalSeconds: Int,
         orientation: String,
         initialFacing: String,
         videoInput: String = "device",
@@ -92,13 +153,17 @@ class CameraStreamManager(
         encWidth = width
         encHeight = height
 
-        val videoOk = genericStream.prepareVideo(width, height, DEFAULT_BITRATE, fps, DEFAULT_KEYFRAME, 0)
+        currentFps = fps
+        preparedBitrate = videoBitrate
+        preparedKeyframe = keyframeIntervalSeconds
+        pendingBitrate = null
+        val videoOk = genericStream.prepareVideo(width, height, videoBitrate, fps, keyframeIntervalSeconds, 0)
         val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
         if (!videoOk || !audioOk) {
             Log.e(TAG, "initPreviewOnly prepare failed: video=$videoOk audio=$audioOk")
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
         }
-        applyStreamClientDefaults(DEFAULT_BITRATE)
+        applyStreamClientDefaults(videoBitrate)
 
 if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
             try {
@@ -120,8 +185,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
         configureGlForOrientation(orientation)
 
-        overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
-        overlayFilterManager?.initLayers(genericStream, emptyList())
+        newOverlayFilterManager(width, height, orientation == "portrait", emptyList(), "initPreview")
 
         if (videoInput != "usb") switchCamera(initialFacing)
 
@@ -151,6 +215,10 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             genericStream.release()
             isPreviewReady = false
 
+            currentFps = fps
+            preparedBitrate = videoBitrate
+            preparedKeyframe = keyframeIntervalSeconds
+            pendingBitrate = null
             val videoOk = genericStream.prepareVideo(width, height, videoBitrate, fps, keyframeIntervalSeconds, 0)
             val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
             if (!videoOk || !audioOk) {
@@ -182,18 +250,32 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
 
             configureGlForOrientation(orientation)
 
-            overlayFilterManager = OverlayFilterManager(width, height, orientation == "portrait")
-            overlayFilterManager?.initLayers(genericStream, sponsors)?.also {
-                checkSponsorResult(it, "configure[fresh]")
-            }
-
-            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
+            newOverlayFilterManager(width, height, orientation == "portrait", sponsors, "configure[fresh]")
 
             if (videoInput != "usb") switchCamera(initialFacing)
 
             isPreviewReady = true
         } else {
-            // Same dims — refresh sponsors only; scoreband filter already exists from initPreview.
+            // Same dims — the encoder stays prepared from initPreview (prepareVideo throws while previewing).
+            if (videoBitrate != preparedBitrate) {
+                pendingBitrate = videoBitrate
+                applyStreamClientDefaults(videoBitrate)
+                DiagLogger.log(TAG, "configure[reuse]: bitrate $preparedBitrate -> $videoBitrate applied at startStream")
+            } else {
+                pendingBitrate = null
+            }
+            if (fps != currentFps || keyframeIntervalSeconds != preparedKeyframe) {
+                emitWarn(
+                    "STREAM_CONFIG_MISMATCH",
+                    "configure() fps/keyframe differ from initPreview() and can't change while previewing; " +
+                        "pass the same StreamConfig to both. Using fps=$currentFps keyframe=${preparedKeyframe}s.",
+                    mapOf(
+                        "preparedFps" to currentFps, "requestedFps" to fps,
+                        "preparedKeyframe" to preparedKeyframe, "requestedKeyframe" to keyframeIntervalSeconds
+                    )
+                )
+            }
+            // Refresh sponsors; scoreband filter already exists from initPreview.
             overlayFilterManager?.updateSponsors(genericStream, sponsors)?.also {
                 checkSponsorResult(it, "configure[reuse]")
             }
@@ -217,6 +299,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             }
             genericStream.startPreview(textureView)
             reapplyOverlaysIfNeeded("bindPreview")
+            zoom.reapply("bindPreview")   // the camera re-opened; RootEncoder reset its zoom to 1.0
             DiagLogger.log(TAG, "bindPreview: preview bound, sent previewBound event isOnPreview=${genericStream.isOnPreview}")
             connectChecker.sendEvent(mapOf("type" to "previewBound"))
         } catch (t: Throwable) {
@@ -242,20 +325,31 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         bindPreview(textureView)
     }
 
-    // Re-apply sponsor + scoreband overlays. Idempotent — `updateSponsors` and
-    // `updateScoreband` clear/replace existing filters. Used after pipeline
-    // transitions (startPreview, startStream) where RootEncoder GL drops filters
-    // attached pre-transition.
+    // Re-add every overlay layer (sponsors, scoreband, visible dynamic overlays) in z-order with fresh
+    // filters. Used after pipeline transitions (startPreview, startStream) where RootEncoder GL drops
+    // filters attached pre-transition. See LayerStack.rebuild.
     private fun reapplyOverlaysIfNeeded(where: String) {
         val mgr = overlayFilterManager ?: return
-        if (lastSponsors.isEmpty() && lastScorebandBytes == null) return
-        Log.d(TAG, "reapplyOverlays[$where]: sponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}, filtersBefore=${genericStream.getGlInterface().filtersCount()}")
-        if (lastSponsors.isNotEmpty()) {
-            mgr.updateSponsors(genericStream, lastSponsors).also {
-                checkSponsorResult(it, "reapply[$where]")
-            }
+        if (!mgr.hasLayers) return
+        Log.d(TAG, "reapplyOverlays[$where]: sponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}, " +
+            "dynamic=${dynamicOverlays.visibleCount}/${dynamicOverlays.size}, filtersBefore=${genericStream.getGlInterface().filtersCount()}")
+        mgr.rebuild(where)
+    }
+
+    /**
+     * Build a fresh overlay manager for the current encoder dims: sponsors + cached scoreband + dynamic
+     * overlays, then hand it to [dynamicOverlays]. Every re-prepare path goes through here so no layer is lost.
+     */
+    private fun newOverlayFilterManager(width: Int, height: Int, isPortrait: Boolean, sponsors: List<SponsorConfig>, where: String) {
+        dynamicOverlays.attachHost(null)
+        dynamicOverlays.snapAnimations()   // spec §3: in-flight animations jump to their end state
+        val mgr = OverlayFilterManager(width, height, isPortrait)
+        mgr.initLayers(genericStream, sponsors, dynamicOverlays.layers()).also {
+            checkSponsorResult(it, where)
         }
-        lastScorebandBytes?.let { mgr.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
+        lastScorebandBytes?.let { mgr.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY, lastScorebandWeight) }
+        overlayFilterManager = mgr
+        dynamicOverlays.attachHost(mgr)
     }
 
     /**
@@ -369,7 +463,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming}")
 
         if (filtersBefore == 0) {
-            if (lastSponsors.isEmpty() && lastScorebandBytes == null) {
+            if (overlayFilterManager?.hasLayers != true) {
                 emitWarn(
                     "NO_OVERLAYS_AT_STREAM_START",
                     "No overlays registered. Stream will publish camera-only video. " +
@@ -383,15 +477,14 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 emitWarn(
                     "OVERLAY_FILTERS_LOST",
                     "Filters added during configure() were dropped by GL pipeline before startStream — re-applying. " +
-                        "lastSponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}.",
-                    mapOf("sponsorCount" to lastSponsors.size, "scorebandPushed" to (lastScorebandBytes != null))
+                        "lastSponsors=${lastSponsors.size}, scorebandPushed=${lastScorebandBytes != null}, dynamic=${dynamicOverlays.visibleCount}.",
+                    mapOf(
+                        "sponsorCount" to lastSponsors.size,
+                        "scorebandPushed" to (lastScorebandBytes != null),
+                        "dynamicCount" to dynamicOverlays.visibleCount
+                    )
                 )
-                if (lastSponsors.isNotEmpty()) {
-                    overlayFilterManager?.updateSponsors(genericStream, lastSponsors)?.also {
-                        checkSponsorResult(it, "startStream-recovery")
-                    }
-                }
-                lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
+                overlayFilterManager?.rebuild("startStream-recovery")
                 Log.d(TAG, "startStream: post-recovery filters=${genericStream.getGlInterface().filtersCount()}")
             }
         }
@@ -405,6 +498,11 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             DiagLogger.logError("STREAM_START_THREW", t.message ?: "", t)
             emitErr("STREAM_START_THREW", t.message ?: "Unknown")
             throw t
+        }
+        // Encoders run from here; a bitrate the prepared encoder doesn't have yet is applied on the fly.
+        pendingBitrate?.let {
+            genericStream.setVideoBitrateOnFly(it)
+            DiagLogger.log(TAG, "startStream: video bitrate on fly -> $it (prepared $preparedBitrate)")
         }
     }
 
@@ -438,15 +536,17 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
     fun stopStream() {
         intentionalStop = true
         reconnectAttempt = 0
+        dynamicOverlays.setLive(false)
         // stopStream() also cancels any in-flight reTry() inside the stream client.
         genericStream.stopStream()
     }
 
-    fun updateScoreband(bytes: ByteArray, width: Float, x: Float, y: Float) {
+    fun updateScoreband(bytes: ByteArray, width: Float, x: Float, y: Float, weight: Int = OverlayFilterManager.DEFAULT_SCOREBAND_WEIGHT) {
         lastScorebandBytes = bytes
         lastScorebandWidth = width
         lastScorebandX = x
         lastScorebandY = y
+        lastScorebandWeight = weight
         val filters = genericStream.getGlInterface().filtersCount()
         Log.d(TAG, "updateScoreband: bytes=${bytes.size}, w=$width x=$x y=$y, filtersCount=$filters, streaming=${genericStream.isStreaming}, onPreview=${genericStream.isOnPreview}")
         val mgr = overlayFilterManager
@@ -457,7 +557,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             throw IllegalStateException(msg)
         }
         try {
-            mgr.updateScoreband(bytes, width, x, y)
+            mgr.updateScoreband(bytes, width, x, y, weight)
         } catch (t: Throwable) {
             val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()
             DiagLogger.logError(code, t.message ?: "updateScoreband failed", t)
@@ -472,6 +572,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         val currentFront = source.getCameraFacing() == CameraHelper.Facing.FRONT
         if (desiredFront != currentFront) {
             source.switchCamera()
+            zoom.onCameraSwitched()
         }
     }
 
@@ -515,7 +616,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         val videoInput = if (currentSource is UvcVideoSource) "usb" else "device"
         val usbVideoDeviceId = (currentSource as? UvcVideoSource)?.deviceId
         val facing = when (currentSource) {
-            is com.pedro.encoder.input.sources.video.Camera2Source -> currentSource.getCameraFacing().name
+            // switchCamera expects "front"/"back"; Facing.name is upper case.
+            is com.pedro.encoder.input.sources.video.Camera2Source -> currentSource.getCameraFacing().name.lowercase()
             else -> "back"
         }
 
@@ -523,25 +625,24 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             genericStream.release()
             isPreviewReady = false
 
-            val videoOk = genericStream.prepareVideo(newWidth, newHeight, DEFAULT_BITRATE, 30, DEFAULT_KEYFRAME, 0)
+            currentFps = 30
+            val bitrate = pendingBitrate ?: preparedBitrate
+            val videoOk = genericStream.prepareVideo(newWidth, newHeight, bitrate, currentFps, preparedKeyframe, 0)
             val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
             if (!videoOk || !audioOk) {
                 Log.e(TAG, "reinitialize prepare failed: video=$videoOk audio=$audioOk")
                 return
             }
-            applyStreamClientDefaults(DEFAULT_BITRATE)
+            preparedBitrate = bitrate
+            pendingBitrate = null
+            applyStreamClientDefaults(bitrate)
 
             encWidth = newWidth
             encHeight = newHeight
 
             configureGlForOrientation(orientation)
 
-            overlayFilterManager = OverlayFilterManager(newWidth, newHeight, isPortrait)
-            overlayFilterManager?.initLayers(genericStream, lastSponsors)?.also {
-                checkSponsorResult(it, "reinitForOrientation")
-            }
-
-            lastScorebandBytes?.let { overlayFilterManager?.updateScoreband(it, lastScorebandWidth, lastScorebandX, lastScorebandY) }
+            newOverlayFilterManager(newWidth, newHeight, isPortrait, lastSponsors, "reinitForOrientation")
 
             if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null) {
                 try {
@@ -566,6 +667,9 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
     fun release() {
         intentionalStop = true
         reconnectAttempt = 0
+        dynamicOverlays.setLive(false)
+        dynamicOverlays.attachHost(null)
+        zoom.release()
         if (isPreviewReady) overlayFilterManager?.release(genericStream)
         if (genericStream.isOnPreview) genericStream.stopPreview()
         if (genericStream.isStreaming) genericStream.stopStream()

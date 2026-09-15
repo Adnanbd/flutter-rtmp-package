@@ -1,6 +1,6 @@
 # 0004 — Overlay coords are resolution-agnostic percentages
 
-- **Status:** Accepted (refined by 0005)
+- **Status:** Accepted (refined by 0005; dynamic overlays also accept encoder px — 0018)
 - **Date:** 2026-04-22, refined 2026-05
 
 ## Context

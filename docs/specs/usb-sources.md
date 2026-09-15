@@ -35,6 +35,9 @@ Pass the same USB fields again in `configure`'s `StreamConfig`.
   stale pthread handle → SIGABRT in `prepare_preview`. `start()` lazily re-creates using cached size.
 - GL rotation differs from phone camera — see [orientation.md](orientation.md#gl-settings--uvc--usb-camera-uvcvideosource).
 - `switchCamera` is a no-op for UVC.
+- Zoom: `ZoomableUvcCamera` (subclass exposing libuvc's `mZoomMin`/`mZoomMax`); `zoomLimits()`, `setZoomPercent()`,
+  `zoomPercent()` feed `UvcZoomTarget`. Cameras without `CT_ZOOM_ABSOLUTE` report `supported: false`.
+  See [camera-zoom.md](camera-zoom.md).
 
 ## `UsbAudioSource : AudioSource`
 - `AudioRecord(MIC)` with `preferredDevice` = matching USB input (API 23+); falls back to default mic if not found.

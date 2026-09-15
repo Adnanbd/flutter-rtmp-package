@@ -17,7 +17,7 @@ class UvcVideoSource(
     }
 
     private var ctrlBlock: USBMonitor.UsbControlBlock? = null
-    private var uvcCamera: UVCCamera? = null
+    private var uvcCamera: ZoomableUvcCamera? = null
     private var running = false
     private var lastWidth: Int = 0
     private var lastHeight: Int = 0
@@ -37,7 +37,7 @@ class UvcVideoSource(
         return try {
             ctrlBlock = registry.openDevice(deviceId)
                 ?: throw IllegalStateException("openDevice($deviceId) returned null")
-            val camera = UVCCamera()
+            val camera = ZoomableUvcCamera()
             camera.open(ctrlBlock!!)
             val sizeOk = trySetPreviewSize(camera, width, height)
             uvcCamera = camera
@@ -122,6 +122,28 @@ class UvcVideoSource(
     }
 
     override fun isRunning(): Boolean = running
+
+    /**
+     * Hardware zoom limits (`CT_ZOOM_ABSOLUTE` raw units), refreshed from the device; `min >= max` = no zoom control.
+     * Null while the camera is closed or the control can't be read (docs/specs/camera-zoom.md).
+     */
+    fun zoomLimits(): Pair<Int, Int>? {
+        val camera = uvcCamera ?: return null
+        return try {
+            camera.getZoom()   // libuvc refreshes mZoomMin/mZoomMax on every read
+            camera.zoomMin to camera.zoomMax
+        } catch (e: Exception) {
+            DiagLogger.log(TAG, "zoomLimits: read failed deviceId=$deviceId — $e")
+            null
+        }
+    }
+
+    /** libuvc zoom in percent (0–100) of the hardware range. */
+    fun setZoomPercent(percent: Int) {
+        uvcCamera?.setZoom(percent)
+    }
+
+    fun zoomPercent(): Int? = uvcCamera?.let { runCatching { it.getZoom() }.getOrNull() }
 
     private fun trySetPreviewSize(camera: UVCCamera, width: Int, height: Int): Boolean {
         val formats = listOf(

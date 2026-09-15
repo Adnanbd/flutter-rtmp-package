@@ -35,5 +35,6 @@ example/build/
 # Agent + internal project docs (not useful to package consumers)
 .claude/
 CLAUDE.md
+PROMPT.md
 opencode.json
 docs/

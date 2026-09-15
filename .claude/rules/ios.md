@@ -7,6 +7,8 @@ paths:
 
 Status: **not implemented**. The plugin is still the `flutter create` stub. Target design: `docs/architecture/ios.md`. Milestones: `docs/plans/ios.md`. Workflow: skill `ios-port`.
 
+Dynamic overlays, carousel and camera zoom are Android only (ADR 0020). They are listed in the parity backlog at the end of `docs/plans/ios.md`; don't port them without a plan agreed with the user. Until a method is implemented here, it stays ❌ in `docs/specs/channel-contract.md`.
+
 - Swift only. No Objective-C.
 - HaishinKit 2.x via CocoaPods (`ios/flutter_rtmp_broadcaster.podspec`). Use `MediaMixer` + `StreamSession`, async/await.
 - Don't use legacy `RTMPConnection`/`RTMPStream` directly.

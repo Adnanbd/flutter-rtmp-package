@@ -20,6 +20,10 @@ and broadcasts the result via RTMP.
 - diagnostics log (export/clear)
 - auto-reconnect via `reTry` + adaptive bitrate (2026-07-30 field fix)
 - observable, recoverable preview bind/unbind with `rebindPreview` (2026-09-02)
+- YouTube-recommended preset bitrates, configured bitrate honored after `initPreview` (2026-09-15, ADR 0019)
+- dynamic overlays M11, sponsor carousel M12, camera zoom M13: device-verified 2026-09-15 (UVC camera zoom not yet, not a merge blocker); `release-check` passed 2026-09-15, merge pending
+
+Working agreements (Android-only scope, batched device checks, user commits manually, merge on approval): [ADR 0020](../decisions/0020-working-agreements-m11-m13.md).
 
 **iOS: not started.** `ios/Classes/FlutterRtmpBroadcasterPlugin.swift` is still the `flutter create` stub.
 
@@ -28,7 +32,7 @@ and broadcasts the result via RTMP.
 - M8 audits are not done.
 - M10 polish is not done (doc comments, CHANGELOG 0.1.0, publish dry-run).
 
-Next: M5 — iOS camera + preview (see `ios-port` skill).
+Next: merge M11 dynamic overlays + M12 sponsor carousel + M13 camera zoom (Android), branch `feature/dynamic-overlays`, on user approval. Tracked in [dynamic-overlays.md](dynamic-overlays.md) and [carousel-and-zoom.md](carousel-and-zoom.md). Device checks passed 2026-09-15; UVC camera zoom untested and not a merge blocker. iOS (M5) paused.
 
 ---
 
@@ -45,6 +49,9 @@ M7  — iOS: RTMP Broadcast                  [ ]    → plans/ios.md
 M8  — Scoreband Update Verification        [ ]
 M9  — Example App                          [ ]
 M10 — Polish, Error Handling & Docs        [ ]
+M11 — Dynamic Overlays (Android)           [DONE] → plans/dynamic-overlays.md
+M12 — Sponsor Carousel (Android)           [DONE] → plans/carousel-and-zoom.md
+M13 — Camera Zoom (Android)                [DONE] → plans/carousel-and-zoom.md
 ```
 
 ---
