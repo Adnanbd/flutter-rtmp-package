@@ -5,7 +5,12 @@ import android.content.Context
 import com.flutterrtmp.broadcaster.camera.CameraPreviewFactory
 import com.flutterrtmp.broadcaster.camera.CameraPreviewView
 import com.flutterrtmp.broadcaster.camera.CameraStreamManager
+import com.flutterrtmp.broadcaster.camera.ZoomException
+import com.flutterrtmp.broadcaster.camera.ZoomInfo
 import com.flutterrtmp.broadcaster.diag.DiagLogger
+import com.flutterrtmp.broadcaster.overlay.DynamicOverlayParser
+import com.flutterrtmp.broadcaster.overlay.OverlayException
+import com.flutterrtmp.broadcaster.overlay.OverlayFilterManager
 import com.flutterrtmp.broadcaster.overlay.SponsorConfig
 import com.flutterrtmp.broadcaster.usb.UsbDeviceRegistry
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -82,6 +87,12 @@ class FlutterRtmpBroadcasterPlugin :
             "updateOverlay" -> handleUpdateOverlay(call, result)
             "updateSponsors" -> result.notImplemented()
             "switchCamera" -> handleSwitchCamera(call, result)
+            "getZoom" -> handleZoom(call, result) { m, _ -> m.zoom.info() }
+            "setZoom" -> handleZoom(call, result) { m, args ->
+                val level = (args["level"] as? Number)?.toFloat()
+                    ?: throw ZoomException("ZOOM_INVALID", "level is required")
+                m.zoom.set(level)
+            }
             "rebindPreview" -> handleRebindPreview(result)
             "setAudioMute" -> handleSetAudioMute(call, result)
             "setAppOrientation" -> handleSetAppOrientation(call, result)
@@ -90,6 +101,16 @@ class FlutterRtmpBroadcasterPlugin :
             "requestUsbPermission" -> handleRequestUsbPermission(call, result)
             "exportDiagnostics" -> result.success(DiagLogger.read())
             "clearDiagnostics" -> { DiagLogger.clear(); result.success(null) }
+            "overlayAdd" -> handleOverlay(call, result) { m, args -> m.dynamicOverlays.add(DynamicOverlayParser.parseAdd(args)) }
+            "overlayUpdate" -> handleOverlay(call, result) { m, args -> m.dynamicOverlays.update(DynamicOverlayParser.parseUpdate(args)) }
+            "overlayHide" -> handleOverlay(call, result) { m, args -> m.dynamicOverlays.hide(DynamicOverlayParser.parseId(args)) }
+            "overlayShow" -> handleOverlay(call, result) { m, args -> m.dynamicOverlays.show(DynamicOverlayParser.parseId(args)) }
+            "overlayRemove" -> handleOverlay(call, result) { m, args ->
+                m.dynamicOverlays.remove(DynamicOverlayParser.parseId(args), DynamicOverlayParser.parseAnimate(args, default = true))
+            }
+            "overlayClear" -> handleOverlay(call, result) { m, args ->
+                m.dynamicOverlays.clear(DynamicOverlayParser.parseAnimate(args, default = false))
+            }
             else -> result.notImplemented()
         }
     }
@@ -140,6 +161,8 @@ class FlutterRtmpBroadcasterPlugin :
         val width = call.argument<Int>("width") ?: 1280
         val height = call.argument<Int>("height") ?: 720
         val fps = call.argument<Int>("fps") ?: 30
+        val videoBitrate = call.argument<Int>("videoBitrate") ?: 4_000_000
+        val keyframeIntervalSeconds = call.argument<Int>("keyframeIntervalSeconds") ?: 2
         val orientation = call.argument<String>("orientation") ?: "portrait"
         val initialFacing = call.argument<String>("initialFacing") ?: "back"
 
@@ -158,7 +181,7 @@ class FlutterRtmpBroadcasterPlugin :
         try {
             cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
                 manager.initPreviewOnly(
-                    width, height, fps, orientation, initialFacing,
+                    width, height, fps, videoBitrate, keyframeIntervalSeconds, orientation, initialFacing,
                     videoInput, usbVideoDeviceId, audioInput, usbAudioDeviceId
                 )
                 eventSink?.let { manager.setSink(it) }
@@ -186,7 +209,7 @@ class FlutterRtmpBroadcasterPlugin :
         val width = call.argument<Int>("width") ?: 1280
         val height = call.argument<Int>("height") ?: 720
         val fps = call.argument<Int>("fps") ?: 30
-        val videoBitrate = call.argument<Int>("videoBitrate") ?: 2_500_000
+        val videoBitrate = call.argument<Int>("videoBitrate") ?: 4_000_000
         val keyframeIntervalSeconds = call.argument<Int>("keyframeIntervalSeconds") ?: 2
         val orientation = call.argument<String>("orientation") ?: "landscape"
         val initialFacing = call.argument<String>("initialFacing") ?: "back"
@@ -284,8 +307,9 @@ class FlutterRtmpBroadcasterPlugin :
                 val width = (call.argument<Int>("width") ?: 90).toFloat()
                 val x = (call.argument<Int>("x") ?: 50).toFloat()
                 val y = (call.argument<Int>("y") ?: 100).toFloat()
+                val weight = (call.argument<Int>("weight") ?: OverlayFilterManager.DEFAULT_SCOREBAND_WEIGHT).coerceIn(0, 100)
                 try {
-                    manager.updateScoreband(bytes, width, x, y)
+                    manager.updateScoreband(bytes, width, x, y, weight)
                     result.success(null)
                 } catch (t: Throwable) {
                     val code = (t.message?.substringBefore(':') ?: "OVERLAY_UPDATE_FAILED").trim()
@@ -293,6 +317,47 @@ class FlutterRtmpBroadcasterPlugin :
                 }
             }
             else -> result.error("UNKNOWN_LAYER", "Unknown layerId: $layerId", null)
+        }
+    }
+
+    /**
+     * Dynamic overlay calls (docs/specs/dynamic-overlays.md). [OverlayException] codes go back to Dart as-is;
+     * anything else becomes OVERLAY_OPERATION_FAILED. All failures are logged to DiagLogger.
+     */
+    private fun handleOverlay(call: MethodCall, result: Result, op: (CameraStreamManager, Map<*, *>) -> Unit) {
+        val manager = cameraStreamManager ?: run {
+            result.error("OVERLAY_NOT_INITIALIZED", "call initPreview() or configure() before using overlays", null)
+            return
+        }
+        val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+        try {
+            op(manager, args)
+            result.success(null)
+        } catch (e: OverlayException) {
+            DiagLogger.logError(e.code, "${call.method}: ${e.message}")
+            result.error(e.code, e.message, null)
+        } catch (t: Throwable) {
+            DiagLogger.logError("OVERLAY_OPERATION_FAILED", "${call.method}: ${t.message}", t)
+            result.error("OVERLAY_OPERATION_FAILED", t.message ?: "${call.method} failed", null)
+        }
+    }
+
+    /** `getZoom` / `setZoom` → `ZoomInfo` map (docs/specs/camera-zoom.md). */
+    private fun handleZoom(call: MethodCall, result: Result, op: (CameraStreamManager, Map<*, *>) -> ZoomInfo) {
+        val manager = cameraStreamManager ?: run {
+            DiagLogger.logError("ZOOM_NOT_READY", "${call.method}: no camera manager")
+            result.error("ZOOM_NOT_READY", "call initPreview() or configure() and wait for previewBound", null)
+            return
+        }
+        val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+        try {
+            result.success(op(manager, args).toMap())
+        } catch (e: ZoomException) {
+            DiagLogger.logError(e.code, "${call.method}: ${e.message}")
+            result.error(e.code, e.message, null)
+        } catch (t: Throwable) {
+            DiagLogger.logError("ZOOM_OPERATION_FAILED", "${call.method}: ${t.message}", t)
+            result.error("ZOOM_OPERATION_FAILED", t.message ?: "${call.method} failed", null)
         }
     }
 

@@ -61,6 +61,7 @@ flutter:
   assets:
     - assets/onlylogovector.svg
     - assets/logobg.svg
+    - assets/overlays/spinner.gif
   fonts:
     - family: NotoSans-VariableFont_wdth,wght
       fonts:

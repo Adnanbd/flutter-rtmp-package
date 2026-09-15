@@ -21,6 +21,7 @@ class MethodChannelBridge {
     required int width,
     required int x,
     required int y,
+    required int weight,
   }) =>
       _channel.invokeMethod('updateOverlay', {
         'layerId': layerId,
@@ -28,6 +29,7 @@ class MethodChannelBridge {
         'width': width,
         'x': x,
         'y': y,
+        'weight': weight,
       });
 
   Future<void> updateSponsors(List<Map<String, dynamic>> sponsors) =>
@@ -37,6 +39,12 @@ class MethodChannelBridge {
       _channel.invokeMethod('switchCamera', {'facing': facing});
 
   Future<void> rebindPreview() => _channel.invokeMethod('rebindPreview');
+
+  Future<Map<Object?, Object?>> getZoom() async =>
+      (await _channel.invokeMethod<Map<Object?, Object?>>('getZoom'))!;
+
+  Future<Map<Object?, Object?>> setZoom(double level) async =>
+      (await _channel.invokeMethod<Map<Object?, Object?>>('setZoom', {'level': level}))!;
 
   Future<void> setAudioMute(bool muted) =>
       _channel.invokeMethod('setAudioMute', {'muted': muted});
@@ -64,4 +72,22 @@ class MethodChannelBridge {
       (await _channel.invokeMethod<String>('exportDiagnostics')) ?? '';
 
   Future<void> clearDiagnostics() => _channel.invokeMethod('clearDiagnostics');
+
+  Future<void> overlayAdd(Map<String, dynamic> args) =>
+      _channel.invokeMethod('overlayAdd', args);
+
+  Future<void> overlayUpdate(Map<String, dynamic> args) =>
+      _channel.invokeMethod('overlayUpdate', args);
+
+  Future<void> overlayHide(String id) =>
+      _channel.invokeMethod('overlayHide', {'id': id});
+
+  Future<void> overlayShow(String id) =>
+      _channel.invokeMethod('overlayShow', {'id': id});
+
+  Future<void> overlayRemove(String id, bool animate) =>
+      _channel.invokeMethod('overlayRemove', {'id': id, 'animate': animate});
+
+  Future<void> overlayClear(bool animate) =>
+      _channel.invokeMethod('overlayClear', {'animate': animate});
 }

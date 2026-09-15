@@ -11,6 +11,9 @@
 /// Size: `width` and `height` describe the max bounding box (% of stream
 /// width/height). The image is scaled aspect-preserving to fit inside that
 /// box (BoxFit.contain). Whichever constraint is hit first wins.
+///
+/// Layering: [weight] 0 (back) – 100 (front), default 10. See `DynamicOverlay`
+/// for how weights order sponsors, the scoreband and dynamic overlays.
 class SponsorPlacement {
   const SponsorPlacement({
     this.left,
@@ -19,7 +22,8 @@ class SponsorPlacement {
     this.bottom,
     required this.width,
     required this.height,
-  });
+    this.weight = 10,
+  }) : assert(weight >= 0 && weight <= 100, 'weight must be 0–100');
 
   final int? left;
   final int? right;
@@ -27,6 +31,7 @@ class SponsorPlacement {
   final int? bottom;
   final int width;
   final int height;
+  final int weight;
 
   Map<String, dynamic> toMap() => {
         if (left != null) 'left': left,
@@ -35,5 +40,6 @@ class SponsorPlacement {
         if (bottom != null) 'bottom': bottom,
         'width': width,
         'height': height,
+        'weight': weight,
       };
 }

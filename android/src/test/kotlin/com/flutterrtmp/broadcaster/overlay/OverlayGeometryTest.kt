@@ -222,4 +222,61 @@ internal class OverlayGeometryTest {
         assertTrue(res.downscaled)
         assertClose(100f, res.rect.h)
     }
+
+    @Test
+    fun wrappedText_wrapsToPlacementWidth_thenPlacesMeasuredSize() {
+        val widths = mutableListOf<Int>()
+        // Fake layout: 30 px per line, 1 line per 100 px of text at 400 px of text length.
+        val measure = { w: Int -> widths.add(w); w to (30 * ((400 + w - 1) / w)) }
+
+        val half = OverlayGeometry.wrappedPlacementRect(
+            Placement(left = Length.Px(0f), top = Length.Px(0f), width = Length.Percent(50f)), portrait720, measure
+        )
+        assertEquals(360, widths.last())                       // 50 % of 720
+        assertClose(50f, half.rect.w)
+        assertClose(60f / 1280f * 100f, half.rect.h)          // 2 lines × 30 px
+        assertFalse(half.downscaled)
+
+        OverlayGeometry.wrappedPlacementRect(Placement(), portrait720, measure)
+        assertEquals(720, widths.last())                       // default: full frame width
+
+        OverlayGeometry.wrappedPlacementRect(Placement(width = Length.Px(5000f)), portrait720, measure)
+        assertEquals(720, widths.last())                       // clamped to the frame
+
+        // A placement height smaller than the text contains it.
+        val boxed = OverlayGeometry.wrappedPlacementRect(
+            Placement(width = Length.Px(100f), height = Length.Px(60f)), portrait720, measure
+        )
+        assertClose(60f / 1280f * 100f, boxed.rect.h)          // 4 lines = 120 px, contained to 60 px
+        assertTrue(boxed.rect.w < 100f / 720f * 100f)
+    }
+
+    @Test
+    fun placementRect_fillBox_usesWholeBox_onlyWithWidthAndHeight() {
+        val box = Placement(right = Length.Px(20f), top = Length.Px(20f), width = Length.Percent(25f), height = Length.Px(144f))
+        val filled = OverlayGeometry.placementRect(box, 400, 100, landscape720, fillBox = true)
+        assertClose(25f, filled.rect.w)
+        assertClose(20f, filled.rect.h)
+        assertClose(100f - 25f - 20f / 1280f * 100f, filled.rect.x)
+        assertFalse(filled.downscaled)
+
+        // Without fillBox the same box contains the 4:1 content.
+        assertClose(25f, OverlayGeometry.placementRect(box, 400, 100, landscape720).rect.w)
+        assertTrue(OverlayGeometry.placementRect(box, 400, 100, landscape720).rect.h < 20f)
+
+        // Only a width: fillBox has no box to fill, content aspect applies.
+        val widthOnly = Placement(width = Length.Percent(25f))
+        assertEquals(
+            OverlayGeometry.placementRect(widthOnly, 400, 100, landscape720),
+            OverlayGeometry.placementRect(widthOnly, 400, 100, landscape720, fillBox = true)
+        )
+
+        // Oversize px box keeps the box aspect when contained.
+        val huge = OverlayGeometry.placementRect(
+            Placement(width = Length.Px(2560f), height = Length.Px(360f)), 1, 1, landscape720, fillBox = true
+        )
+        assertTrue(huge.downscaled)
+        assertClose(100f, huge.rect.w)
+        assertClose(25f, huge.rect.h)                          // 2560×360 → 1280×180 px
+    }
 }

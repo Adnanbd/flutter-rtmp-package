@@ -1,5 +1,7 @@
 package com.flutterrtmp.broadcaster.overlay
 
+import kotlin.math.roundToInt
+
 /**
  * Pure overlay geometry — no Android or GL dependencies, so it is unit-testable on the JVM.
  *
@@ -128,16 +130,39 @@ object OverlayGeometry {
     }
 
     /**
+     * Wrapped text (`maxLines > 1`): wrap to the placement width (default the frame width), then place the measured
+     * size with the normal rules — so a placement `height` still contains it and oversize is downscaled.
+     * [measure] returns the content size in px for a wrap width in px.
+     */
+    fun wrappedPlacementRect(p: Placement, frame: FrameSize, measure: (widthPx: Int) -> Pair<Int, Int>): PlacementResult {
+        val wrapPercent = (p.width?.toPercent(frame.width) ?: 100f).coerceIn(0f, 100f)
+        val wrapPx = (wrapPercent / 100f * frame.width).roundToInt().coerceIn(1, frame.width)
+        val (w, h) = measure(wrapPx)
+        return placementRect(p.copy(width = Length.Px(w.toFloat())), w.coerceAtLeast(1), h.coerceAtLeast(1), frame)
+    }
+
+    /**
      * Dynamic overlay placement (docs/specs/dynamic-overlays.md §2).
      * Size: width+height → contain; one → aspect-derived; neither → intrinsic px.
      * Any result larger than the frame is contained in the frame and flagged `downscaled`.
+     * [fillBox] (carousel slot, spec §12): width+height → the box itself, not contained.
      */
-    fun placementRect(p: Placement, contentWidthPx: Int, contentHeightPx: Int, frame: FrameSize): PlacementResult {
-        val contentAspect = contentWidthPx.toFloat() / contentHeightPx.toFloat()
+    fun placementRect(
+        p: Placement,
+        contentWidthPx: Int,
+        contentHeightPx: Int,
+        frame: FrameSize,
+        fillBox: Boolean = false
+    ): PlacementResult {
+        var contentAspect = contentWidthPx.toFloat() / contentHeightPx.toFloat()
         val boxW = p.width?.toPercent(frame.width)
         val boxH = p.height?.toPercent(frame.height)
 
         var (w, h) = when {
+            fillBox && boxW != null && boxH != null -> {
+                if (boxW > 0f && boxH > 0f) contentAspect = boxW / boxH * frame.aspect
+                boxW to boxH
+            }
             boxW != null && boxH != null -> contain(boxW, boxH, contentAspect, frame.aspect)
             boxW != null -> boxW to boxW * frame.aspect / contentAspect
             boxH != null -> (boxH * contentAspect / frame.aspect) to boxH

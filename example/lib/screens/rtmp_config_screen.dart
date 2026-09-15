@@ -7,6 +7,7 @@ import 'camera_screen.dart';
 class _SponsorItem {
   Uint8List bytes;
   int positionIndex; // 0=Left 1=Middle 2=Right
+  int weight = 10; // layer order 0–100 (plugin default 10)
   _SponsorItem(this.bytes, this.positionIndex);
 }
 
@@ -21,6 +22,10 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
   final _urlCtrl = TextEditingController(text: 'rtmp://a.rtmp.youtube.com/live2');
   final _keyCtrl = TextEditingController(text: '0rqt-kuhd-qkah-vqbk-1j7y');
   bool _connecting = false;
+  int _scorebandWeight = 50;
+
+  /// null = the preset's bitrate (YouTube recommendation).
+  int? _videoBitrate;
 
   VideoResolution _selectedRes = VideoResolution.hd720;
   VideoOrientation _selectedOrient = VideoOrientation.portrait;
@@ -55,7 +60,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
       width: base.width,
       height: base.height,
       fps: base.fps,
-      videoBitrate: base.videoBitrate,
+      videoBitrate: _videoBitrate ?? base.videoBitrate,
       keyframeIntervalSeconds: base.keyframeIntervalSeconds,
       orientation: base.orientation,
       initialFacing: base.initialFacing,
@@ -128,6 +133,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
               top: 2,
               width: 22,
               height: 100,
+              weight: s.weight,
             ),
           ),
         )
@@ -153,7 +159,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
       await controller.configure(rtmpUrl: url, rtmpKey: key, sponsors: _buildSponsors(), config: config);
       await controller.setAppOrientation(config.orientation);
       if (!mounted) return;
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CameraScreen(controller: controller)));
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CameraScreen(controller: controller, scorebandWeight: _scorebandWeight)));
     } on RtmpBroadcasterException catch (e) {
       _showSnack('Failed: ${e.code} — ${e.message}');
     } catch (e) {
@@ -228,6 +234,20 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
+                  ),
+                  Row(
+                    children: [
+                      Text('Layer weight ${sponsor.weight}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Expanded(
+                        child: Slider(
+                          value: sponsor.weight.toDouble(),
+                          max: 100,
+                          divisions: 20,
+                          label: '${sponsor.weight}',
+                          onChanged: (v) => setState(() => sponsor.weight = v.round()),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -468,6 +488,15 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                 ),
               ),
             const SizedBox(height: 12),
+            _buildDropdownRow<int?>('Bitrate', [
+              DropdownMenuItem(
+                value: null,
+                child: Text('Preset (${((_selectedRes == VideoResolution.hd720 ? StreamConfig.youtube720Portrait : StreamConfig.youtube1080Portrait).videoBitrate / 1e6).toStringAsFixed(0)} Mbps)'),
+              ),
+              for (final mbps in const [2.5, 4.0, 6.8, 10.0])
+                DropdownMenuItem(value: (mbps * 1e6).round(), child: Text('$mbps Mbps')),
+            ], _videoBitrate, (v) => setState(() => _videoBitrate = v)),
+            const SizedBox(height: 12),
             _buildDropdownRow('Audio Input', [
               DropdownMenuItem(value: AudioInput.mic, child: const Text('Phone Microphone')),
               DropdownMenuItem(value: AudioInput.usb, child: const Text('USB Audio Device')),
@@ -492,7 +521,29 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                 label: const Text('Add Sponsor Image'),
                 style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 20),
+            const Text('Layers', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              'Weight 0 = back, 100 = front. Defaults: sponsors 10, scoreband 50, dynamic overlays 50. '
+              'Dynamic overlays are added from the Overlay Studio (layers button) on the next screen.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            Row(
+              children: [
+                SizedBox(width: 140, child: Text('Scoreband weight $_scorebandWeight')),
+                Expanded(
+                  child: Slider(
+                    value: _scorebandWeight.toDouble(),
+                    max: 100,
+                    divisions: 20,
+                    label: '$_scorebandWeight',
+                    onChanged: (v) => setState(() => _scorebandWeight = v.round()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             SizedBox(
               height: 50,
               child: FilledButton(

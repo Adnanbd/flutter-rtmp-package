@@ -7,7 +7,8 @@ data class SponsorConfig(
     val top: Int?,
     val bottom: Int?,
     val width: Int,
-    val height: Int
+    val height: Int,
+    val weight: Int = OverlayFilterManager.DEFAULT_SPONSOR_WEIGHT
 ) {
     companion object {
         fun fromMap(map: Map<String, Any>): SponsorConfig = SponsorConfig(
@@ -17,7 +18,8 @@ data class SponsorConfig(
             top = map["top"] as? Int,
             bottom = map["bottom"] as? Int,
             width = map["width"] as Int,
-            height = map["height"] as Int
+            height = map["height"] as Int,
+            weight = ((map["weight"] as? Number)?.toInt() ?: OverlayFilterManager.DEFAULT_SPONSOR_WEIGHT).coerceIn(0, 100)
         )
     }
 
@@ -26,7 +28,7 @@ data class SponsorConfig(
         if (other !is SponsorConfig) return false
         return left == other.left && right == other.right &&
             top == other.top && bottom == other.bottom &&
-            width == other.width && height == other.height &&
+            width == other.width && height == other.height && weight == other.weight &&
             bytes.contentEquals(other.bytes)
     }
 
@@ -38,6 +40,7 @@ data class SponsorConfig(
         result = 31 * result + (bottom ?: 0)
         result = 31 * result + width
         result = 31 * result + height
+        result = 31 * result + weight
         return result
     }
 }

@@ -1,3 +1,5 @@
+import 'zoom_info.dart';
+
 enum RtmpStatusType {
   connected,
   disconnected,
@@ -16,6 +18,15 @@ enum RtmpStatusType {
   // stream error to every listener.
   previewUnbound,
   usbDetached,
+  // Dynamic overlays (docs/specs/dynamic-overlays.md). `RtmpStatus.overlayId`
+  // is set; `overlayRemoved` also carries `reason`
+  // (removed | expired | cleared | completed).
+  overlayShown,
+  overlayHidden,
+  overlayRemoved,
+  // Camera zoom changed without a setZoom call (docs/specs/camera-zoom.md).
+  // `RtmpStatus.zoom` is set; `reason` is reapplied | clamped | reset | cameraSwitched.
+  zoomChanged,
 }
 
 class RtmpStatus {
@@ -26,6 +37,8 @@ class RtmpStatus {
     this.errorCode,
     this.errorMessage,
     this.reconnectAttempt,
+    this.overlayId,
+    this.zoom,
   });
 
   final RtmpStatusType type;
@@ -34,6 +47,12 @@ class RtmpStatus {
   final String? errorCode;
   final String? errorMessage;
   final int? reconnectAttempt;
+
+  /// Dynamic overlay id for overlay events and overlay warnings.
+  final String? overlayId;
+
+  /// Zoom state for [RtmpStatusType.zoomChanged].
+  final ZoomInfo? zoom;
 
   factory RtmpStatus.fromMap(Map<dynamic, dynamic> map) {
     final typeStr = map['type'] as String;
@@ -48,6 +67,8 @@ class RtmpStatus {
       errorCode: map['code'] as String?,
       errorMessage: map['message'] as String?,
       reconnectAttempt: map['attempt'] as int?,
+      overlayId: map['id'] as String?,
+      zoom: map['zoom'] is Map ? ZoomInfo.fromMap(map['zoom'] as Map) : null,
     );
   }
 }
