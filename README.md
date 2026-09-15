@@ -6,7 +6,7 @@ A Flutter plugin for live RTMP broadcasting with **native GPU-composited overlay
 
 | Android | iOS |
 |---------|-----|
-| ✅ Full | 🚧 Stub (camera preview only — RTMP + overlays not yet implemented) |
+| ✅ Full | 🚧 Not implemented (scaffold stub) |
 
 - **Min Android SDK:** 21
 - **Min iOS:** 14.0
@@ -177,7 +177,7 @@ class _MyStreamScreenState extends State<MyStreamScreen> {
       sponsors: [
         SponsorOverlay(
           bytes: sponsorImageBytes,   // Uint8List — PNG or JPG
-          position: OverlayPosition(x: 0.02, y: 0.02, width: 0.22, height: 0.08),
+          placement: SponsorPlacement(left: 2, top: 2, width: 22, height: 8),
         ),
       ],
     );
@@ -195,6 +195,10 @@ class _MyStreamScreenState extends State<MyStreamScreen> {
           debugPrint('Bitrate: ${status.kbps} kbps');
         case RtmpStatusType.reconnecting:
           debugPrint('Reconnecting: attempt ${status.reconnectAttempt}');
+        case RtmpStatusType.warning:
+          debugPrint('Warning: ${status.errorCode} — ${status.errorMessage}');
+        default:
+          break;
       }
     });
   }
@@ -246,19 +250,26 @@ class _MyStreamScreenState extends State<MyStreamScreen> {
 | `configure({rtmpUrl, rtmpKey, sponsors, config})` | Set RTMP endpoint, sponsor overlays, and video config. |
 | `startStream()` | Begin broadcasting. Requires prior `configure()` call. |
 | `stopStream()` | Stop broadcasting. |
-| `updateScoreband(Uint8List pngBytes)` | Push a new scoreband PNG. Safe to call during a live stream. |
+| `updateScoreband(Uint8List pngBytes, {int width = 90, int x = 50, int y = 100})` | Push a new scoreband PNG. `width` 1–100 (% of stream width), `x`/`y` 0–100 (0 = left/top edge, 100 = right/bottom edge). Defaults = bottom-center, 90% wide. Safe during a live stream. |
 | `switchCamera({CameraFacing facing})` | Switch between `CameraFacing.front` and `CameraFacing.back`. |
 | `setAudioMuted(bool muted)` | Mute or unmute microphone. |
 | `setAppOrientation(VideoOrientation orientation)` | Change stream orientation. Reinitializes the encoder pipeline. |
 | `updateSponsors(List<SponsorOverlay>)` | _(Not yet implemented on Android)_ Update sponsor images mid-stream. |
+| `rebindPreview()` | Re-attach the preview to the on-screen view after background/foreground without re-initializing. Throws `NO_PREVIEW_VIEW` / `SURFACE_UNAVAILABLE` when there is nothing to bind yet. |
+| `listUsbVideoDevices()` | _(Android)_ List attached UVC cameras → `List<UsbDeviceInfo>`. |
+| `listUsbAudioDevices()` | _(Android 6+)_ List USB audio inputs → `List<UsbAudioDeviceInfo>`. |
+| `requestUsbPermission(int deviceId)` | _(Android)_ Show the system USB permission dialog → `bool` granted. |
+| `exportDiagnostics()` | _(Android)_ Return the on-device diagnostics log as text. Never throws. |
+| `clearDiagnostics()` | _(Android)_ Delete the diagnostics log. |
 | `dispose()` | Release resources. |
 
 #### Properties
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `statusStream` | `Stream<RtmpStatus>` | Broadcast stream of RTMP status events. |
-| `config` | `StreamConfig` | Current config. Throws if `initPreview()` not called yet. |
+| `statusStream` | `Stream<RtmpStatus>` | Broadcast stream of RTMP status events (preview bind/unbind events are folded into `previewBound`). |
+| `previewBound` | `ValueNotifier<bool>` | `true` while the native preview is attached to a surface. Goes `false` when the app is backgrounded or the view is disposed. |
+| `config` | `StreamConfig` | Config passed to the last successful `configure()`. Throws before that. |
 
 ---
 
@@ -298,6 +309,9 @@ const config = StreamConfig(
   keyframeIntervalSeconds: 2,
   orientation: VideoOrientation.portrait,
   initialFacing: CameraFacing.back,
+  // Optional external sources (Android):
+  // videoInput: VideoInput.usb, usbVideoDeviceId: device.deviceId,
+  // audioInput: AudioInput.usb, usbAudioDeviceId: mic.deviceId,
 );
 ```
 
@@ -309,32 +323,30 @@ Static image composited onto the video frame at configure time.
 
 ```dart
 SponsorOverlay(
-  bytes: Uint8List,           // PNG or JPG image bytes
-  position: OverlayPosition(
-    x: 0.02,                  // Left edge (0.0 = left, 1.0 = right)
-    y: 0.02,                  // Top edge  (0.0 = top,  1.0 = bottom)
-    width: 0.22,              // Normalized width
-    height: 0.08,             // Normalized height — auto aspect-ratio corrected
+  bytes: Uint8List,                 // PNG or JPG image bytes (HEIC not supported)
+  placement: SponsorPlacement(
+    left: 2,                        // image LEFT edge at 2% from frame left
+    top: 2,                         // image TOP edge at 2% from frame top
+    width: 22,                      // max box width  (% of stream width)
+    height: 8,                      // max box height (% of stream height)
   ),
 )
 ```
 
-**Coordinate system:**
-- `(0, 0)` = top-left of the final encoded video frame
-- `(1, 1)` = bottom-right
-- Coordinates apply to the **post-rotation** frame — portrait stream `x=0.02` is 2% from the left of the portrait output
-- Aspect ratio is automatically corrected on Android — the image's natural ratio is preserved within the given `width`
+**`SponsorPlacement` rules** (all values are integers 0–100, percent of the final **post-rotation** frame):
+- Horizontal: only `left` → left edge pinned; only `right` → right edge pinned `right%` from the frame's right; both or neither → centered.
+- Vertical: same with `top` / `bottom`.
+- Size: the image is scaled aspect-preserving to fit inside `width × height` (like `BoxFit.contain`).
 
 **Recommended positions for three sponsors (top row):**
 
 ```dart
-// Left
-OverlayPosition(x: 0.02, y: 0.02, width: 0.22, height: 0.08)
-// Center
-OverlayPosition(x: 0.39, y: 0.02, width: 0.22, height: 0.08)
-// Right
-OverlayPosition(x: 0.76, y: 0.02, width: 0.22, height: 0.08)
+SponsorPlacement(left: 2,  top: 2, width: 22, height: 8)   // Left
+SponsorPlacement(          top: 2, width: 22, height: 8)   // Center
+SponsorPlacement(right: 2, top: 2, width: 22, height: 8)   // Right
 ```
+
+`position: OverlayPosition(x, y, width, height)` (normalized 0.0–1.0) still works but is **deprecated**.
 
 ---
 
@@ -345,8 +357,8 @@ OverlayPosition(x: 0.76, y: 0.02, width: 0.22, height: 0.08)
 | `type` | `RtmpStatusType` | Always |
 | `kbps` | `int?` | `bitrate` events |
 | `reason` | `String?` | `disconnected` events |
-| `errorCode` | `String?` | `error` events |
-| `errorMessage` | `String?` | `error` events |
+| `errorCode` | `String?` | `error` and `warning` events |
+| `errorMessage` | `String?` | `error` and `warning` events |
 | `reconnectAttempt` | `int?` | `reconnecting` events |
 
 #### `RtmpStatusType`
@@ -358,12 +370,15 @@ OverlayPosition(x: 0.76, y: 0.02, width: 0.22, height: 0.08)
 | `error` | Unrecoverable error — check `errorCode` |
 | `bitrate` | Periodic bitrate report |
 | `reconnecting` | Auto-reconnect attempt in progress |
+| `warning` | Non-fatal issue — check `errorCode` (e.g. `SPONSOR_DECODE_FAILED`, `OVERLAY_FILTERS_LOST`, `NO_OVERLAYS_AT_STREAM_START`) |
+| `usbDetached` | A USB device was unplugged (Android) |
+| `previewBound` / `previewUnbound` | Internal; consumed by `controller.previewBound`, never emitted on `statusStream` |
 
 ---
 
 ### `RtmpBroadcasterException`
 
-Thrown by `initPreview()` and `configure()` on setup failure.
+Thrown by any controller method when the native call fails (codes below). Some failures are also emitted as `error` events on `statusStream`.
 
 ```dart
 try {
@@ -384,7 +399,18 @@ try {
 | `STREAM_ERROR` | Generic streaming failure |
 | `INVALID_URL` | Empty RTMP URL |
 | `INVALID_KEY` | Empty stream key |
-| `MAX_RECONNECT_EXCEEDED` | All 3 auto-reconnect attempts failed |
+| `INVALID_ARGS` | Required argument missing |
+| `PREVIEW_NOT_READY` / `PREVIEW_NOT_BOUND` | `startStream()` before the pipeline is prepared / the preview surface is bound |
+| `NO_MANAGER` / `NO_PREVIEW_VIEW` / `SURFACE_UNAVAILABLE` / `REBIND_PREVIEW_ERROR` | `rebindPreview()` failures |
+| `OVERLAY_NOT_INITIALIZED` | `updateScoreband()` before `initPreview()`/`configure()` |
+| `OVERLAY_DECODE_FAILED` | Scoreband bytes are not a decodable image |
+| `UNKNOWN_LAYER` | Unsupported overlay layer id |
+| `USB_DEVICE_GONE` / `USB_PERMISSION_REVOKED` | USB camera unplugged or permission lost before `startStream()` |
+| `PREVIEW_BIND_FAILED` / `STREAM_START_THREW` | Native preview/stream start threw (event only) |
+| `AUTH_ERROR` | RTMP server rejected authentication (event only) |
+| `MAX_RECONNECT_EXCEEDED` | All 3 auto-reconnect attempts failed (event only) |
+
+Full contract: [docs/specs/channel-contract.md](docs/specs/channel-contract.md).
 
 ---
 
@@ -501,11 +527,15 @@ Practical consequences:
 - **Preview:** Plain `TextureView` in a `FlutterPlatformView`. `GenericStream.startPreview(textureView)` attaches the encoder's preview output — no separate `CameraController` or second camera session is opened
 - **Compositing:** `ImageObjectFilterRender` (OpenGL ES, GPU-accelerated) — one filter instance per layer, registered via `genericStream.getGlInterface().addFilter()`
 - **Layer order (bottom → top):** Camera frame → Sponsor_0 → Sponsor_1 → Sponsor_2 → Scoreband
+- **External sources:** UVC cameras and USB audio via `libuvc` (`VideoInput.usb` / `AudioInput.usb`)
+- **Diagnostics:** rotating on-device log, readable with `exportDiagnostics()`
+
+Deeper docs: [architecture](docs/architecture/overview.md) · [specs](docs/specs/) · [design decisions](docs/decisions/README.md).
 
 ### iOS
 
-- HaishinKit 2.2.5 is declared as a pod dependency for future use
-- Current implementation: stub — returns `FlutterMethodNotImplemented` for all stream methods
+- HaishinKit 2.x is declared as a pod dependency for future use ([target design](docs/architecture/ios.md))
+- Current implementation: `flutter create` stub — the plugin channels and preview view are not registered yet
 
 ---
 
@@ -513,7 +543,8 @@ Practical consequences:
 
 | Limitation | Detail |
 |-----------|--------|
-| iOS streaming | Not implemented — camera preview only |
+| iOS | Not implemented — plugin is a scaffold stub |
+| USB sources, diagnostics, adaptive bitrate | Android only |
 | `updateSponsors()` mid-stream | Not yet implemented on Android — sponsor changes require stopping and reconfiguring |
 | Simulator | Android emulator has no camera; physical device required |
 | Multiple widgets | Only one `RtmpBroadcastWidget` per running app supported |

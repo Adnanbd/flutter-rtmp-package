@@ -286,8 +286,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         }
     }
 
-    // Phone (Camera2Source) — values per CLAUDE.md "Orientation Handling".
-    // Do NOT change these without updating CLAUDE.md.
+    // Phone (Camera2Source) — values per docs/specs/orientation.md.
+    // Do NOT change these without updating that spec.
     private fun configureGlForDeviceCamera(orientation: String) {
         val gl = genericStream.getGlInterface()
         val isPortrait = orientation == "portrait"
@@ -379,7 +379,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             } else {
                 // Filters added earlier but RootEncoder GL pipeline lost them
                 // (observed at 1920x1080 after configureGlForOrientation rotation knobs).
-                // Re-apply BEFORE startStream — filter add must precede startStream per CLAUDE.md.
+                // Re-apply BEFORE startStream — filter add must precede startStream (docs/specs/overlay-compositing.md).
                 emitWarn(
                     "OVERLAY_FILTERS_LOST",
                     "Filters added during configure() were dropped by GL pipeline before startStream — re-applying. " +
