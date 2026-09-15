@@ -49,10 +49,9 @@ Reusing phone values on UVC gives a white preview (portrait) or off-axis frame (
 1. Sets `activity.requestedOrientation` (portrait / landscape lock).
 2. `reinitializeForOrientation`:
    - Same orientation as current → only re-apply GL settings (avoids UVC reopen `nativeConnect=-99`).
-   - Real flip → swap `encWidth`/`encHeight` (keeps 720p vs 1080p), `release` + `prepareVideo(DEFAULT_BITRATE, 30fps)`
+   - Real flip → swap `encWidth`/`encHeight` (keeps 720p vs 1080p), `release` + `prepareVideo` with the configured bitrate, fps and keyframe
      + `prepareAudio`, GL settings, rebuild `OverlayFilterManager` with cached sponsors + scoreband,
      restore camera facing or UVC source.
-   - ⚠ Re-prepare uses the default 2.5 Mbps / 30 fps, not the configured values.
 
 Restoring portrait on back-navigation is the app's job (`SystemChrome.setPreferredOrientations`).
 

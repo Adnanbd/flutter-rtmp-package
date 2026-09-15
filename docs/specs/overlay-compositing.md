@@ -7,10 +7,10 @@
 ## Invariants
 
 1. All compositing is native. Flutter never sees overlays; only the encoded stream (and native preview) does.
-2. Layer order, bottom → top: `camera → sponsor_0 … sponsor_N → scoreband`.
+2. Layer order comes from one `LayerStack` sorted by `(weight, classRank sponsor<scoreband<dynamic, seq)` (ADR 0014). Default weights (sponsors 10, scoreband 50, dynamic 50) give `camera → sponsor_0 … sponsor_N → scoreband → dynamic overlays`. All filter add/remove goes through `LayerStack` — never call `addFilter` directly.
 3. Sponsors are static: sent in `configure()`, cached natively, re-applied after pipeline transitions.
 4. Scoreband is push-only: the app calls `updateScoreband(png)` when data changes (~2–3 s). No timers in the package.
-5. Dart positions are percentages/normalized. Native converts using **encoder (post-rotation) dims**, never preview size.
+5. Dart geometry is relative to the post-rotation stream frame: integer percent for sponsors and the scoreband; percent or encoder px per field for dynamic overlays ([ADR 0018](../decisions/0018-dynamic-overlay-px-lengths.md)). Native converts using **encoder (post-rotation) dims**, never preview size.
 6. Overlay failures must be loud: throw + `error` event, or `warning` event. Never silently skip.
 
 ## Android implementation notes (RootEncoder 2.7.2, verified empirically)
@@ -44,6 +44,11 @@ Landscape: no bitmap rotation, pre == post.
 Worked example: 1408×186 PNG, bottom-center on 720×1280 → post `scale=(90, 6.69) pos=(5, 89.31)` →
 pre `scale=(6.69, 90) pos=(4.0, 5)`.
 
+### Bitmaps are recycled on upload
+RootEncoder's `TextureLoader.load` calls `Bitmap.recycle()` after uploading the texture. A bitmap passed to
+`setImage` is dead afterwards. `OverlayFilterManager` therefore caches **encoded bytes** and each filter factory
+decodes a fresh bitmap. Never cache and re-use a bitmap across `setImage` calls.
+
 ### Filter lifecycle — order matters
 Always `setImage → setScale → setPosition → addFilter`. Adding before `setImage` can leave an unbound
 texture that later `setImage` calls don't fix. Hence: **scoreband filter is lazily created on first
@@ -51,10 +56,12 @@ texture that later `setImage` calls don't fix. Hence: **scoreband filter is lazi
 
 ### Filters get dropped by pipeline transitions
 RootEncoder's GL can lose filters across `startPreview` / resolution changes (observed at 1920×1080).
-Mitigations in `CameraStreamManager`:
-- `lastSponsors` + `lastScoreband*` cached.
-- `bindPreview` → `reapplyOverlaysIfNeeded`.
-- `startStream` with `filtersCount() == 0` → emits `OVERLAY_FILTERS_LOST` warning and re-applies before
+Mitigations:
+- `CameraStreamManager` caches `lastSponsors` + `lastScoreband*`; `DynamicOverlayController` keeps dynamic overlays
+  (rendered through `DynamicLayerFilter`, not `ImageObjectFilterRender.setImage`: [ADR 0015](../decisions/0015-cpu-composed-dynamic-layers.md), device-verified 2026-09-15).
+- Every re-prepare builds a new `OverlayFilterManager` via `newOverlayFilterManager`, seeded with all three.
+- `bindPreview` → `reapplyOverlaysIfNeeded` → `LayerStack.rebuild()` (clear + re-add all visible layers in order, fresh filters).
+- `startStream` with `filtersCount() == 0` → emits `OVERLAY_FILTERS_LOST` warning and rebuilds before
   `genericStream.startStream`. Filters must exist before `startStream`.
 
 ### R8 / ProGuard

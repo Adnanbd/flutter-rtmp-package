@@ -18,22 +18,27 @@ Start with the root [CLAUDE.md](../CLAUDE.md) (agent boot) or [README.md](../REA
 | Overlay wrong position, missing, or rotated | [specs/overlay-compositing.md](specs/overlay-compositing.md) → skill `debug-overlay` |
 | Portrait/landscape or GL rotation | [specs/orientation.md](specs/orientation.md) → skill `orientation-change` |
 | Dynamic overlays (M11, in progress) | [plans/dynamic-overlays.md](plans/dynamic-overlays.md) (resume box) → [specs/dynamic-overlays.md](specs/dynamic-overlays.md) |
+| Sponsor carousel / camera zoom (M12/M13, in progress) | [plans/carousel-and-zoom.md](plans/carousel-and-zoom.md) (resume box) → [specs/dynamic-overlays.md §12](specs/dynamic-overlays.md#12-carousel-content), [specs/camera-zoom.md](specs/camera-zoom.md) |
 | Reconnect or bitrate behavior | [specs/reconnect-and-bitrate.md](specs/reconnect-and-bitrate.md) |
 | USB camera or mic | [specs/usb-sources.md](specs/usb-sources.md) |
 | Field bug from a release build | [specs/diagnostics.md](specs/diagnostics.md) |
 | Start the iOS implementation | [architecture/ios.md](architecture/ios.md), [plans/ios.md](plans/ios.md) → skill `ios-port` |
 | Encoder settings for YouTube | [reference/youtube-rtmp.md](reference/youtube-rtmp.md), [reference/youtube-latency.md](reference/youtube-latency.md) |
+| How work is run (Android-only scope, batched device checks, manual commits, example hooks) | [decisions/0020-working-agreements-m11-m13.md](decisions/0020-working-agreements-m11-m13.md) |
 | Finish any change | skill `sync-docs` |
 | Release | skill `release-check` |
+
+User decisions live where they are enforced: contract → `specs/`, design or process → `decisions/`, how to code →
+`../.claude/rules/`. Plan decision tables record when they were agreed.
 
 ## Map
 
 ```
 docs/
 ├── specs/          channel-contract · dart-api · overlay-compositing · orientation
-│                   reconnect-and-bitrate · usb-sources · diagnostics · dynamic-overlays (draft)
+│                   reconnect-and-bitrate · usb-sources · diagnostics · dynamic-overlays · camera-zoom
 ├── architecture/   overview · android · ios (target design)
-├── decisions/      0001–0014 ADRs + template
-├── plans/          roadmap (M1, M8–M11) · android (M2–M4) · ios (M5–M7) · dynamic-overlays (M11)
+├── decisions/      0001–0020 ADRs + template
+├── plans/          roadmap (M1, M8–M13) · android (M2–M4) · ios (M5–M7) · dynamic-overlays (M11) · carousel-and-zoom (M12–M13)
 └── reference/      youtube-rtmp · youtube-latency · sponsor-placement-request
 ```

@@ -32,6 +32,12 @@ Trigger: `onConnectionFailed(reason)` or `onDisconnect()` → `disconnected` eve
 - `setMaxBitrate(videoBitrate)` + `reset()` in `applyStreamClientDefaults`; `reset()` again on `startStream`.
 - `RtmpConnectChecker.onNewBitrate(bps)` → emits `{type: bitrate, kbps}` → `bitrateAdapter.adaptBitrate(bps, hasCongestion())`.
 - Configured `videoBitrate` is a **ceiling**. `bitrate` events vary during a stream by design.
+- `initPreview` prepares the encoder with `StreamConfig.videoBitrate`. `prepareVideo` throws while previewing, so a
+  different bitrate passed to `configure` (same dims) is kept as pending and applied with `setVideoBitrateOnFly` right
+  after every `startStream`. Different fps/keyframe → warning `STREAM_CONFIG_MISMATCH`.
+- Presets follow YouTube's recommended H.264 bitrates (YouTube Help "Choose live encoder settings", checked 2026-09-15):
+  720p30 4 Mbps, 1080p30 10 Mbps; keyframe 2 s. Before 2026-09-15 the configured bitrate was ignored after
+  `initPreview` (stream stuck at 2.5 Mbps; YouTube warned it was below the recommendation).
 - Audio fixed at 128 kbps AAC, 44.1 kHz stereo.
 - Rationale: field report showed ~2 min of `RtmpSender: Video/Audio frame discarded` then `Broken pipe`
   when uplink fell below a fixed 2.5 Mbps.

@@ -1,6 +1,6 @@
 # 0014 — Single layer stack with 0–100 weights for all overlays
 
-- **Status:** Accepted
+- **Status:** Accepted (ordering device-verified 2026-09-15)
 - **Date:** 2026-09-15
 
 ## Context

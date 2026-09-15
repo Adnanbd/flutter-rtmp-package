@@ -130,3 +130,7 @@ HaishinKit `MediaMixer` so the same pipeline can later publish.
 - [ ] After 3 failed attempts: fire `error { code: MAX_RECONNECT_EXCEEDED, message: ... }`
 - [ ] `stopStream()` from Dart must cancel any in-flight `Task` handling the retry
 - [ ] Event-payload shape must match Android (M4.7) so Dart listeners are platform-agnostic
+
+## Android-only features to port later (parity backlog)
+- [ ] Camera zoom (`getZoom` / `setZoom`, `zoomChanged`) — [specs/camera-zoom.md](../specs/camera-zoom.md). HaishinKit: `AVCaptureDevice.videoZoomFactor` on the mixer's video device.
+- [ ] Dynamic overlays incl. carousel — [specs/dynamic-overlays.md](../specs/dynamic-overlays.md). Not planned for iOS yet.

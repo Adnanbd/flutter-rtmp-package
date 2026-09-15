@@ -1,6 +1,6 @@
 # 0007 — Default config 720×1280 portrait, YouTube presets
 
-- **Status:** Accepted (supersedes original 1280×720 landscape default)
+- **Status:** Accepted (supersedes original 1280×720 landscape default); bitrate values superseded by 0019
 - **Date:** 2026-04-25
 
 ## Context

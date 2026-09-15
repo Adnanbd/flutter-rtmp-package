@@ -13,13 +13,14 @@ flutter pub get
 flutter analyze
 flutter test
 (cd example && flutter analyze && flutter test)
+(cd example/android && ./gradlew :flutter_rtmp_broadcaster:testDebugUnitTest)   # Kotlin JVM tests
 ```
 
 ## 2. Builds
 ```sh
 cd example
 flutter build apk --debug
-flutter build appbundle --release     # R8 on: the overlay keeps in consumer-rules.pro must hold
+flutter build appbundle --release     # R8 on: the overlay + ZoomableUvcCamera keeps in consumer-rules.pro must hold
 flutter build ios --no-codesign        # only once iOS is implemented; note stub status otherwise
 ```
 Release build is mandatory: overlays have silently vanished under R8 before.
@@ -28,9 +29,11 @@ Release build is mandatory: overlays have silently vanished under R8 before.
 Stream to a test RTMP endpoint and check:
 - Preview works.
 - Sponsors and scoreband are visible **in the output stream**.
-- Camera flip and mute work live.
-- Background → foreground recovers the preview.
+- Overlay Studio: a scenario of each kind (image/GIF/text/ticker/carousel, animations, duration) shows in the output stream.
+- Camera flip, mute and pinch zoom work live; zoom survives background → foreground.
+- Background → foreground recovers the preview and all overlay layers.
 - Kill network → `reconnecting` ×N → recovers or `MAX_RECONNECT_EXCEEDED`.
+- Milestone device checklists in `docs/plans/` are ticked (ADR 0020).
 
 Use a release build for this.
 
