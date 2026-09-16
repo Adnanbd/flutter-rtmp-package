@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
@@ -67,6 +68,12 @@ class OverlayStudio extends ChangeNotifier {
   final ValueChanged<String> onMessage;
   final ValueNotifier<int> scorebandWeight;
   final match = MockMatch();
+
+  /// Set by the Go Live screen: renders the on-screen `ScoreBandView` to PNG.
+  /// With `advance: true` the mock score moves on first, so the captured pixels
+  /// actually change — the host-app pattern of "data changed → re-render →
+  /// capture → push". Null when the studio is used without that screen.
+  Future<Uint8List?> Function({bool advance})? captureBand;
 
   late final StreamSubscription<RtmpStatus> _sub;
   final Map<String, StudioOverlay> overlays = {};

@@ -28,6 +28,7 @@ and in the stream.
   - [Sponsors](#sponsors)
   - [Scoreband](#scoreband)
   - [Dynamic overlays](#dynamic-overlays)
+    - [Push a Flutter widget as an overlay](#push-a-flutter-widget-as-an-overlay)
   - [Carousel](#carousel)
   - [USB camera and microphone](#usb-camera-and-microphone)
   - [Auto-reconnect and adaptive bitrate](#auto-reconnect-and-adaptive-bitrate)
@@ -816,6 +817,9 @@ Future<void> pushScoreband(RtmpBroadcastController controller) async {
 Push only when the data changes; the native side swaps the texture without interrupting the stream. If your scoreband
 widget reads inherited state (Riverpod, Provider, Theme), render it under the same ancestors.
 
+The same captured bytes work as a dynamic overlay, which adds animations, a live-time duration, free placement and
+hide/show — see [Push a Flutter widget as an overlay](#push-a-flutter-widget-as-an-overlay).
+
 ---
 
 ## Dynamic overlays
@@ -922,7 +926,7 @@ Future<void> contentTypes(RtmpBroadcastController controller, Uint8List gifBytes
 
 | Content | Notes |
 |---|---|
-| `ImageContent(bytes)` | PNG, JPG, static WebP. Images above 2048 px are subsampled on decode. |
+| `ImageContent(bytes)` | PNG, JPG, static WebP. Images above 2048 px are subsampled on decode. The bytes can come from an asset, the network, a `Canvas`, or a captured Flutter widget — see [below](#push-a-flutter-widget-as-an-overlay). |
 | `GifContent(bytes)` | Loops forever by frame delays (delays ≤ 10 ms play at 100 ms, minimum 20 ms). Runs live or not. |
 | `TextContent(text, {style})` | `maxLines: 1` (default): line breaks become spaces and the line is scaled to fit — long text gets tiny. `maxLines > 1`: wraps to the placement width (default the frame width), keeps `\n`, ellipsis after the last line. Android shapes complex scripts (Bangla, Arabic). |
 | `TickerContent(text, {style, speedPxPerSec, cycleDuration, loop, loopGap, direction})` | Band = placement `width` (default 100 %) × one line (`fontSizePx` + 2 × `paddingPx`); `height` is ignored. Default speed 120 px/s, default gap 33 % of the band, default style white on 70 % black. Scrolls only while live and shown. Changing the text restarts the scroll; changing only style or speed keeps the position. When a `duration` runs out, the current pass finishes first. |
@@ -934,6 +938,79 @@ Future<void> contentTypes(RtmpBroadcastController controller, Uint8List gifBytes
 const style = TextOverlayStyle(fontSizePx: 36, background: Color(0xCC000000));
 await controller.updateOverlay('badge', content: TextContent('GOAL! 2–1', style: style.copyWith(fontSizePx: 44)));
 ```
+
+### Push a Flutter widget as an overlay
+
+`ImageContent` takes the same PNG bytes as [`updateScoreband`](#scoreband), so anything you can render as a Flutter
+widget can be an overlay: wrap it in a `RepaintBoundary`, capture it, and push the bytes. Use this when you want a
+widget-designed layer *and* the things the scoreband API doesn't offer — enter/exit animations, a live-time
+`duration`, arbitrary placement, `weight`, and `hideOverlay` / `showOverlay`.
+
+```dart
+import 'dart:ui' as ui;
+
+import 'package:flutter/rendering.dart';
+
+/// Renders a mounted RepaintBoundary to PNG; null when it isn't on screen yet.
+Future<Uint8List?> captureBoundaryPng(GlobalKey key, {double pixelRatio = 2.0}) async {
+  final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+  if (boundary == null) return null;
+  if (boundary.debugNeedsPaint) {
+    await WidgetsBinding.instance.endOfFrame;
+  }
+  final image = await boundary.toImage(pixelRatio: pixelRatio);
+  try {
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  } finally {
+    image.dispose();
+  }
+}
+
+final _bandKey = GlobalKey();
+
+// In build(): off-screen but painted, so it can be captured.
+Widget buildHiddenBand(Widget band) =>
+    Positioned(left: 0, top: -10000, child: RepaintBoundary(key: _bandKey, child: band));
+
+Future<void> showBand(RtmpBroadcastController controller) async {
+  final png = await captureBoundaryPng(_bandKey);
+  if (png == null) return;
+  await controller.addOverlay(DynamicOverlay(
+    id: 'match-band',                        // 'scoreband' and 'sponsor_*' are reserved
+    content: ImageContent(png),
+    placement: const OverlayPlacement(
+      bottom: OverlayLength.percent(6),
+      width: OverlayLength.percent(90),
+    ),
+    weight: 55,
+    enter: const OverlayAnimation.slide(edge: OverlayEdge.bottom),
+    exit: const OverlayAnimation.slide(edge: OverlayEdge.bottom),
+  ));
+}
+
+// After every data change: re-render the widget, re-capture, swap the image.
+Future<void> refreshBand(RtmpBroadcastController controller) async {
+  final png = await captureBoundaryPng(_bandKey);
+  if (png == null) return;
+  await controller.updateOverlay('match-band', content: ImageContent(png));
+}
+```
+
+`updateOverlay(content:)` swaps the texture on the live layer — the overlay is not removed and re-added, and the
+enter animation does not replay (only a changed `weight` re-orders the stack).
+
+Things to get right:
+
+- **Push, don't poll.** Call `refreshBand` when your data changes. The package runs no timers of its own.
+- **The widget must be mounted and painted.** Off-screen (`top: -10000`) is fine; `Opacity(opacity: 0)` is not,
+  because it paints nothing. `setState` first, then capture on the next frame.
+- **Ids.** `scoreband` and `sponsor_*` throw `OVERLAY_ID_RESERVED`, so a captured band needs its own id; it can run
+  alongside the real scoreband at a different `weight`.
+- **Budget.** At most 16 dynamic overlays, visible plus hidden (`OVERLAY_LIMIT_REACHED`).
+- **Cost.** Each update decodes the PNG once; images above 2048 px are subsampled on decode. `pixelRatio` only buys
+  sharpness, since the layer is scaled to its placement on the stream.
+- **Inherited state.** If the widget reads Riverpod/Provider/Theme, render it under the same ancestors.
 
 ### Placement
 
@@ -1549,6 +1626,9 @@ Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract
   - *Scenarios* with mock match data: wicket banner, boundary GIF, sponsor break, lower third, live score text,
     English / Bangla / Arabic tickers, sponsor carousels (crossfade, push, per-item interval), interrupt tests, layer
     order, 16-overlay limit, error codes, auto demo.
+  - *Widget capture* scenarios: the Go Live screen's real scoreband widget captured to PNG and pushed as a dynamic
+    overlay, then re-captured and swapped in place — see
+    [Push a Flutter widget as an overlay](#push-a-flutter-widget-as-an-overlay).
   - *Build*: any overlay from every API option (image / GIF from samples or the gallery, text, ticker, carousel,
     placement in % or px, weight, duration, animations).
   - *Active*: re-weight, hide/show, change duration, replace content, move or remove each overlay; scoreband weight.

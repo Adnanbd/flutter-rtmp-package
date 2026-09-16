@@ -41,3 +41,4 @@ Fixed (device test 2026-09-15):
   - `docs/` holds specs, architecture, ADRs, plans, and reference.
   - `.claude/` holds path-scoped rules, skills, and shared settings.
 - Docs (2026-09-15): README rewritten as a full guide and API reference (every method, model, event, error and warning code). ADRs 0018 (percent or px lengths), 0019 (preset bitrates), 0020 (working agreements). Rules and skills updated for dynamic overlays, carousel and zoom.
+- Docs (2026-09-16): README section "Push a Flutter widget as an overlay" — the `RepaintBoundary` → PNG → `ImageContent` recipe, and `updateOverlay(content:)` as the dynamic-overlay equivalent of `updateScoreband`, with the id, limit and cost caveats. No API change; this already worked. Example: Overlay Studio "Widget capture" scenarios capture the real `ScoreBandView` and drive a dynamic overlay with it, plus a shared `captureBoundaryPng` helper.

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
@@ -28,6 +29,19 @@ Future<void> _wait(int ms) => Future.delayed(Duration(milliseconds: ms));
 /// Fixed ids for overlays that scenarios update in place.
 const scoreTextId = 'score_text';
 const tickerEnId = 'ticker_en';
+const widgetBandId = 'widget_band';
+
+/// Captures the Go Live screen's scoreband widget as PNG, logging why it can't.
+Future<Uint8List?> _captureBand(OverlayStudio s, {bool advance = false}) async {
+  final capture = s.captureBand;
+  if (capture == null) {
+    s.log('no capture hook — open the studio from the Go Live screen', isError: true);
+    return null;
+  }
+  final png = await capture(advance: advance);
+  if (png == null) s.log('scoreband widget is not on screen yet', isError: true);
+  return png;
+}
 
 final List<StudioScenario> studioScenarios = [
   // ---- match moments (mock data) -------------------------------------------------------------
@@ -383,6 +397,39 @@ final List<StudioScenario> studioScenarios = [
     await expect('OVERLAY_ID_EXISTS', () => c.addOverlay(DynamicOverlay(id: 'dup_check', content: ImageContent(png))));
     await c.removeOverlay('dup_check', animate: false).catchError((_) {});
     s.log('error-code check done');
+  }),
+
+  // ---- widget capture (the scoreband pattern, as a dynamic overlay) ---------------------------
+  StudioScenario('Widget capture', 'Scoreband widget → dynamic overlay',
+      'Captures the real ScoreBandView → ImageContent · slides up from the bottom · weight 55', (s) async {
+    final png = await _captureBand(s);
+    if (png == null) return;
+    // Re-running replaces the previous one; the studio skips the late overlayRemoved.
+    final existing = s.overlays[widgetBandId];
+    if (existing != null) await s.remove(existing);
+    await s.add(
+      DynamicOverlay(
+        id: widgetBandId,
+        content: ImageContent(png),
+        placement: const OverlayPlacement(bottom: OverlayLength.percent(6), width: OverlayLength.percent(90)),
+        weight: 55,
+        enter: const OverlayAnimation.slide(edge: OverlayEdge.bottom, durationMs: 450),
+        exit: const OverlayAnimation.slide(edge: OverlayEdge.bottom, durationMs: 300),
+      ),
+      label: 'Captured scoreband',
+      kind: OverlayKind.image,
+    );
+  }),
+  StudioScenario('Widget capture', 'Re-capture → update in place',
+      'Moves the score on, re-captures, swaps the image — no re-add, no re-animation', (s) async {
+    final o = s.overlays[widgetBandId];
+    if (o == null) {
+      s.log('run "Scoreband widget → dynamic overlay" first', isError: true);
+      return;
+    }
+    final png = await _captureBand(s, advance: true);
+    if (png == null) return;
+    await s.update(o, 'widget re-capture', content: ImageContent(png));
   }),
 ];
 

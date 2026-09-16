@@ -9,10 +9,9 @@ The example is the integration test bed and reference for host apps (Part A).
 
 - Request camera and mic permissions with `permission_handler` **before** `initPreview`/`configure` (`screens/permission_gate_screen.dart`).
 - Never use the `camera` package. `RtmpBroadcastWidget` is the only preview.
-- Scoreband capture pattern:
-  1. `setState`, then await `WidgetsBinding.instance.endOfFrame` if `debugNeedsPaint`.
-  2. `RenderRepaintBoundary.toImage(pixelRatio: 2.0)` → PNG → `controller.updateScoreband`.
-- The capture widget may be off-screen but must have non-zero opacity. Push only when score data changes.
+- Widget → PNG capture goes through `captureBoundaryPng` (`lib/overlay_studio/widget_capture.dart`): `setState`, await `WidgetsBinding.instance.endOfFrame` if `debugNeedsPaint`, then `RenderRepaintBoundary.toImage` → PNG. Don't hand-roll it again.
+- The same bytes feed `controller.updateScoreband` **or** `ImageContent` on a dynamic overlay (`updateOverlay(content:)` swaps the texture in place). Scenarios reach the on-screen widget only through `OverlayStudio.captureBand`, which the Go Live screen sets.
+- The capture widget may be off-screen but must have non-zero opacity. Push only when the data changes.
 - Resolution, orientation and bitrate pickers are disabled once configured or live. Camera flip, mute and zoom stay enabled. Orientation is fixed after configure, so "orientation flip with overlays" can't be tested from the UI (unit tests cover it).
 - Pass the same `StreamConfig` to `initPreview` and `configure`. Bitrate picker `null` = the preset's bitrate (ADR 0019).
 - Sponsors: build `SponsorOverlay(placement: SponsorPlacement(...))`. Don't use the deprecated `OverlayPosition`. The config screen has per-sponsor layer weight and scoreband weight.

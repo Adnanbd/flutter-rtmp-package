@@ -51,6 +51,43 @@ void main() {
 
   DynamicOverlay badge(String id) => DynamicOverlay(id: id, content: ImageContent(Uint8List.fromList([1, 2, 3])));
 
+  test('widget-capture scenarios push captured bytes as ImageContent', () async {
+    final studio = OverlayStudio(RtmpBroadcastController(), onMessage: (_) {}, scorebandWeight: 50);
+    await Future<void>.delayed(Duration.zero);
+    final png = Uint8List.fromList([9, 8, 7]);
+    var advanced = false;
+    studio.captureBand = ({bool advance = false}) async {
+      advanced = advanced || advance;
+      return png;
+    };
+    StudioScenario byTitle(String title) => studioScenarios.firstWhere((s) => s.title == title);
+
+    await byTitle('Scoreband widget → dynamic overlay').run(studio);
+    final addArgs = calls.firstWhere((c) => c.method == 'overlayAdd').arguments as Map;
+    expect(addArgs['id'], widgetBandId);
+    expect((addArgs['content'] as Map)['type'], 'image');
+    expect((addArgs['content'] as Map)['bytes'], png);
+
+    // Re-capture must update in place, not add again.
+    await byTitle('Re-capture → update in place').run(studio);
+    expect(advanced, isTrue, reason: 'the mock score must move on before re-capturing');
+    final updateArgs = calls.firstWhere((c) => c.method == 'overlayUpdate').arguments as Map;
+    expect(updateArgs['id'], widgetBandId);
+    expect((updateArgs['content'] as Map)['type'], 'image');
+    expect(calls.where((c) => c.method == 'overlayAdd').length, 1);
+    studio.dispose();
+  });
+
+  test('widget-capture scenarios log instead of throwing without a capture hook', () async {
+    final studio = OverlayStudio(RtmpBroadcastController(), onMessage: (_) {}, scorebandWeight: 50);
+    await Future<void>.delayed(Duration.zero);
+
+    await studioScenarios.firstWhere((s) => s.title == 'Scoreband widget → dynamic overlay').run(studio);
+    expect(calls.where((c) => c.method == 'overlayAdd'), isEmpty);
+    expect(studio.events.first.isError, isTrue);
+    studio.dispose();
+  });
+
   test('studio tracks overlay state from native events', () async {
     final studio = OverlayStudio(RtmpBroadcastController(), onMessage: (_) {}, scorebandWeight: 50);
     await Future<void>.delayed(Duration.zero);
