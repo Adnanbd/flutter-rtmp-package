@@ -25,3 +25,4 @@ Template: copy [0000-template.md](0000-template.md), take the next number.
 | [0016](0016-carousel-dynamic-content.md) | Sponsor carousel as dynamic overlay content | Accepted |
 | [0017](0017-source-native-zoom.md) | Camera zoom in the source, with verify and re-apply | Accepted |
 | [0021](0021-own-usb-permission-flow.md) | Android: own USB permission flow, not libuvc `USBMonitor.register()` | Accepted |
+| [0022](0022-usb-audio-late-resolve.md) | Android: USB audio resolves late, verifies its route, warns on fallback | Accepted |

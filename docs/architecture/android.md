@@ -36,8 +36,9 @@ kotlin/com/flutterrtmp/broadcaster/
 │   ├── ChoreographerFrameDriver.kt   Per-vsync onFrame while animating, throttled to encoder fps.
 │   └── SponsorConfig.kt              Channel map → data class.
 ├── rtmp/RtmpConnectChecker.kt        ConnectChecker → EventChannel (main thread, 32-event buffer).
-├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource.
-└── diag/DiagLogger.kt                File log + uncaught handler.
+├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource
+│                                     (+ pure UsbAudioRouting: USB input selection, ADR 0022).
+└── diag/                             DiagLogger (file log + uncaught handler), EndpointRedactor (safe endpoint logging).
 ```
 
 ## Pipeline call order (critical)

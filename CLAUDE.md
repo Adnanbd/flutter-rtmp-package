@@ -58,6 +58,7 @@ Path-specific rules load automatically from `.claude/rules/` when you touch `lib
 | **Active work: dynamic overlays (M11)** | `docs/plans/dynamic-overlays.md` — read its "Resume here" box first |
 | **Active work: carousel + zoom (M12/M13)** | `docs/plans/carousel-and-zoom.md` — read its "Resume here" box first |
 | Package user docs (full guide + API reference) | `README.md` |
+| Real host app used for field tests (not this repo, don't edit) | `../apivideo_test` (`lib/module/live/view/custom.package/rtmp_config_screen.dart`) |
 
 ## Skills (`.claude/skills/`)
 

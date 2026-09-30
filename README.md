@@ -1199,7 +1199,9 @@ Future<void> startWithUsbSources(RtmpBroadcastController controller) async {
 - Unplugging sends `usbDetached`. `startStream()` fails with `USB_DEVICE_GONE` / `USB_PERMISSION_REVOKED` if the camera
   is gone or permission was lost.
 - `switchCamera` does nothing for USB cameras. Zoom works if the camera has a zoom control.
-- If the USB microphone isn't found at start, the default microphone is used.
+- USB audio: the input is matched by id, then by product name, then the first USB input (so a missing
+  `usbAudioDeviceId` still uses USB). If none is attached, or Android routes recording elsewhere, the stream uses the
+  phone microphone and you get warning `USB_AUDIO_DEVICE_NOT_FOUND` / `USB_AUDIO_NOT_ROUTED`. Not device-verified as of 2026-09-30.
 
 ---
 
@@ -1550,6 +1552,8 @@ Sent as `warning` events (`RtmpStatus.errorCode`). The stream keeps running.
 | `OVERLAY_DOWNSCALED` | A dynamic overlay was larger than the frame and was scaled down (`overlayId` set) |
 | `STREAM_CONFIG_MISMATCH` | `configure()` fps/keyframe differ from `initPreview()`; the `initPreview()` values are kept |
 | `ZOOM_REAPPLY_FAILED` | The kept zoom couldn't be applied again within 3 s after the camera reopened; it is retried on the next open |
+| `USB_AUDIO_DEVICE_NOT_FOUND` | `AudioInput.usb` selected but no USB audio input is attached; the phone microphone is used |
+| `USB_AUDIO_NOT_ROUTED` | Android recorded from another input (e.g. phone mic) instead of the USB input; the plugin asked to re-route |
 
 Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract.md).
 

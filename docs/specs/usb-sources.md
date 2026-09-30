@@ -49,8 +49,19 @@ Pass the same USB fields again in `configure`'s `StreamConfig`.
   See [camera-zoom.md](camera-zoom.md).
 
 ## `UsbAudioSource : AudioSource`
-- `AudioRecord(MIC)` with `preferredDevice` = matching USB input (API 23+); falls back to default mic if not found.
-- PCM 16-bit read loop on a daemon thread; mute sends zeroed buffers.
+ADR 0022. Composite devices (HDMI switchers, capture cards, webcams) can re-enumerate their USB audio input when the
+camera opens, so the `AudioDeviceInfo` id picked by the app may be stale when audio starts.
+- `AudioRecord(MIC)` with `preferredDevice` = USB input chosen by pure `UsbAudioRouting.select`: same id → same
+  product name → first USB input (`TYPE_USB_DEVICE` / `TYPE_USB_HEADSET`). `usbAudioDeviceId` null = first USB input.
+- Resolved at `create()` and **again at `start()`**, right before `startRecording()` (camera open by then).
+- Route checked after the first PCM frame (`routedDevice`) and on every `AudioRouting` change (API 24+). Not USB →
+  re-resolve + set `preferredDevice` again, and warning `USB_AUDIO_NOT_ROUTED` once per bad-route episode.
+- `AudioDeviceCallback` while recording: a USB input added (re-enumeration) → preferred device re-applied.
+- No USB input (or API < 23) → records from the default mic and sends warning `USB_AUDIO_DEVICE_NOT_FOUND`. Never silent.
+- `CameraStreamManager.installAudioSource` is used by `initPreviewOnly`, `configure` (fresh **and** reuse) and keeps the
+  current source when it already matches; `"mic"` after USB swaps back to `MicrophoneSource`.
+- Every step logs to `DiagLogger` (tag `UsbAudioSource`): available inputs, chosen device + match kind, routed device.
+- PCM 16-bit read loop on a daemon thread; mute sends zeroed buffers; negative `read` → `USB_AUDIO_READ_FAILED` log.
 
 ## Guards at `startStream`
 `USB_DEVICE_GONE` if the device detached; `USB_PERMISSION_REVOKED` if permission lost.
@@ -64,3 +75,4 @@ intent filter with `@xml/usb_device_filter` (see `example/android/app/src/main/A
 - Rapid release + reopen can fail with `nativeConnect=-99`; `reinitializeForOrientation` avoids re-prepare when orientation is unchanged.
 - `usbDetached` `deviceId` is not surfaced on `RtmpStatus`.
 - Permission flow fix (ADR 0021) not device-verified as of 2026-09-30.
+- USB audio routing fix (ADR 0022) not device-verified as of 2026-09-30.

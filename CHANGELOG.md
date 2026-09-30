@@ -5,6 +5,9 @@
 Android implementation; iOS is not implemented yet.
 
 Fixed (2026-09-30, not device-verified):
+- Android USB audio: with a USB audio input selected, the stream could carry the phone microphone with no warning. `UsbAudioSource` now resolves the USB input again right before recording (id → product name → first USB input), checks the actual route, re-routes on change, and sends new warnings `USB_AUDIO_DEVICE_NOT_FOUND` / `USB_AUDIO_NOT_ROUTED`. `configure()` after `initPreview()` now applies a changed audio input. ADR 0022.
+- Android USB audio crashed on Android 5.x (API 21/22): the read loop called API 23 `AudioRecord.bufferSizeInFrames`.
+- Diagnostics log leaked the RTMP stream key (`startStream` line printed the full endpoint). Endpoints are now redacted to `scheme://host/app/***`.
 - Android USB permission: `requestUsbPermission` returned `false` without a system dialog on Android 12+ for any device not already granted (libuvc 3.2.0 `USBMonitor.register()` fails on targetSdk 31+). The plugin now runs its own permission request and detach receiver; `usbDetached` events are delivered again. ADR 0021.
 
 Fixed (device test 2026-09-15):

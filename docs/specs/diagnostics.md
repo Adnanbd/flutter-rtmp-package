@@ -22,7 +22,9 @@ Purpose: field debugging on release builds where logcat is unavailable or `Log.d
   `result.error(CODE, …)`, with the same `CODE`.
 - Use `DiagLogger.log` for pipeline state transitions (preview bind/unbind, source changes, startStream state).
 - Keep hot paths (per-frame, per-bitrate callback) on plain `Log.d`, not the file.
-- Never log the RTMP stream key or the full `rtmpEndpoint` (it contains the key). Checked 2026-09-15: no native log line includes either.
+- Never log the RTMP stream key or the full `rtmpEndpoint` (it contains the key). Log `EndpointRedactor.redact(endpoint)`
+  (`scheme://host/app/***`) instead. The `startStream` line leaked it until 2026-09-30.
+- `emitWarn` in `CameraStreamManager` also writes the warning to the file.
 
 ## Triage recipe
 1. Reproduce, then `exportDiagnostics()` (or `adb shell run-as <pkg> cat files/rtmp_diag.log`).

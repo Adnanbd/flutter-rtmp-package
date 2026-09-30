@@ -166,3 +166,5 @@ by the controller; **EventChannel** `error` event on `statusStream`. Some codes 
 | `OVERLAY_DOWNSCALED` | dynamic overlay larger than the frame, scaled to fit; extra key `id` |
 | `ZOOM_REAPPLY_FAILED` | kept zoom not re-applied within 3 s after the camera opened; extra key `requested` |
 | `STREAM_CONFIG_MISMATCH` | `configure` fps/keyframe differ from `initPreview` (can't change while previewing; initPreview values kept); extra keys `preparedFps`, `requestedFps`, `preparedKeyframe`, `requestedKeyframe` |
+| `USB_AUDIO_DEVICE_NOT_FOUND` | `audioInput: usb` but no USB audio input attached; recording from the default mic; extra key `requestedDeviceId` |
+| `USB_AUDIO_NOT_ROUTED` | Android routed the USB audio recording to another input (e.g. built-in mic); re-route requested; extra keys `routedDevice`, `routedType`, `requestedDeviceId` |

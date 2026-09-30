@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
 import com.flutterrtmp.broadcaster.diag.DiagLogger
+import com.flutterrtmp.broadcaster.diag.EndpointRedactor
 import com.flutterrtmp.broadcaster.overlay.ChoreographerFrameDriver
 import com.flutterrtmp.broadcaster.overlay.DynamicOverlayController
 import com.flutterrtmp.broadcaster.overlay.OverlayContentDecoder
@@ -177,11 +178,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             }
         }
 
-        if (audioInput == "usb") {
-            val usbAudio = UsbAudioSource(context, usbAudioDeviceId)
-            genericStream.changeAudioSource(usbAudio)
-            Log.d(TAG, "initPreviewOnly: switched to USB audio device=$usbAudioDeviceId")
-        }
+        installAudioSource(audioInput, usbAudioDeviceId, "initPreviewOnly")
 
         configureGlForOrientation(orientation)
 
@@ -239,11 +236,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 }
             }
 
-            if (audioInput == "usb") {
-                val usbAudio = UsbAudioSource(context, usbAudioDeviceId)
-                genericStream.changeAudioSource(usbAudio)
-                Log.d(TAG, "configure: switched to USB audio device=$usbAudioDeviceId")
-            }
+            installAudioSource(audioInput, usbAudioDeviceId, "configure[fresh]")
 
             this.encWidth = width
             this.encHeight = height
@@ -275,6 +268,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                     )
                 )
             }
+            // initPreview may have been called with a different audio input.
+            installAudioSource(audioInput, usbAudioDeviceId, "configure[reuse]")
             // Refresh sponsors; scoreband filter already exists from initPreview.
             overlayFilterManager?.updateSponsors(genericStream, sponsors)?.also {
                 checkSponsorResult(it, "configure[reuse]")
@@ -283,6 +278,42 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         }
 
         isConfigured = true
+    }
+
+    /**
+     * Puts the requested audio input on [genericStream] (docs/specs/usb-sources.md). Idempotent: keeps the
+     * current source when it already matches, so `configure` after `initPreview` doesn't re-open the mic.
+     * Must run after prepareAudio (changeAudioSource creates the new source with the prepared params).
+     */
+    private fun installAudioSource(audioInput: String, usbAudioDeviceId: Int?, where: String) {
+        val current = genericStream.audioSource
+        when (audioInput) {
+            "usb" -> {
+                if (current is UsbAudioSource && (usbAudioDeviceId == null || current.currentDeviceId == usbAudioDeviceId)) {
+                    DiagLogger.log(TAG, "$where: audio already USB (${audioSourceForLog()})")
+                    return
+                }
+                val usbAudio = UsbAudioSource(context, usbAudioDeviceId) { code, message, details ->
+                    mainHandler.post { emitWarn(code, message, details) }
+                }
+                genericStream.changeAudioSource(usbAudio)
+                DiagLogger.log(TAG, "$where: audio -> USB requestedId=$usbAudioDeviceId")
+            }
+            else -> {
+                if (current !is UsbAudioSource) {
+                    DiagLogger.log(TAG, "$where: audio=${audioSourceForLog()} (requested $audioInput)")
+                    return
+                }
+                genericStream.changeAudioSource(MicrophoneSource())
+                DiagLogger.log(TAG, "$where: audio USB -> phone mic (requested $audioInput)")
+            }
+        }
+    }
+
+    private fun audioSourceForLog(): String = when (val src = genericStream.audioSource) {
+        is UsbAudioSource -> "USB(id=${src.currentDeviceId})"
+        is MicrophoneSource -> "phoneMic"
+        else -> src.javaClass.simpleName
     }
 
     fun bindPreview(textureView: TextureView) {
@@ -459,8 +490,9 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         val filtersBefore = genericStream.getGlInterface().filtersCount()
         val gl = genericStream.getGlInterface()
         DiagLogger.log(TAG, "startStream: videoSrc=${src?.javaClass?.simpleName} " +
-            "filters=$filtersBefore enc=${encWidth}x${encHeight} ep=$rtmpEndpoint " +
-            "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming}")
+            "filters=$filtersBefore enc=${encWidth}x${encHeight} ep=${EndpointRedactor.redact(rtmpEndpoint)} " +
+            "isOnPreview=${genericStream.isOnPreview} isStreaming=${genericStream.isStreaming} " +
+            "audioSrc=${audioSourceForLog()}")
 
         if (filtersBefore == 0) {
             if (overlayFilterManager?.hasLayers != true) {
@@ -516,7 +548,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         connectChecker.sendEvent(mapOf("type" to "error", "code" to code, "message" to message))
 
     private fun emitWarn(code: String, message: String, extra: Map<String, Any?> = emptyMap()) {
-        Log.w(TAG, "WARN $code: $message ${if (extra.isNotEmpty()) extra else ""}")
+        DiagLogger.log(TAG, "WARN $code: $message ${if (extra.isNotEmpty()) extra else ""}")
         val payload = mutableMapOf<String, Any?>("type" to "warning", "code" to code, "message" to message)
         payload.putAll(extra)
         connectChecker.sendEvent(payload)
@@ -636,6 +668,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             preparedBitrate = bitrate
             pendingBitrate = null
             applyStreamClientDefaults(bitrate)
+            // release() + prepareAudio() re-creates the current audio source in place (USB stays USB).
+            DiagLogger.log(TAG, "reinitialize: audioSrc=${audioSourceForLog()}")
 
             encWidth = newWidth
             encHeight = newHeight
