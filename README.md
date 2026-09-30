@@ -1193,6 +1193,8 @@ Future<void> startWithUsbSources(RtmpBroadcastController controller) async {
 }
 ```
 
+- Request camera **and** microphone permission before `requestUsbPermission()`. Android denies USB access to devices
+  with an audio input (HDMI switchers, capture cards) when the app doesn't hold `RECORD_AUDIO`.
 - Pass the same USB fields in the `StreamConfig` for both `initPreview()` and `configure()`.
 - Unplugging sends `usbDetached`. `startStream()` fails with `USB_DEVICE_GONE` / `USB_PERMISSION_REVOKED` if the camera
   is gone or permission was lost.

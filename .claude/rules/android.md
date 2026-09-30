@@ -21,6 +21,7 @@ Architecture: `docs/architecture/android.md`. Specs: `docs/specs/overlay-composi
 - Overlay duration counts only while live and VISIBLE: `RtmpConnectChecker` connect/disconnect → `setLive` posted to main, ignored after `stopStream`.
 - Zoom: `ZoomController` is the only writer (ADR 0017). RootEncoder `Camera2ApiManager.setZoom` silently no-ops until the capture session exists, and `closeCamera` resets zoom → re-apply and read back after every camera open (`bindPreview`), retry every 100 ms for 3 s, else warning `ZOOM_REAPPLY_FAILED`. Reset to 1.0 on a real `switchCamera`.
 - The design relies on RootEncoder 2.7.2 and libuvc 3.2.0 internals (`textureLoader` field, `drawFilter` order, `Camera2ApiManager` zoom, `UVCCamera.mZoomMin/mZoomMax`). Re-check ADR 0015 and 0017 on any upgrade.
+- Never call libuvc `USBMonitor.register()` / `requestPermission()`: broken on targetSdk 31+. `UsbDeviceRegistry` owns the permission PendingIntent and receiver (ADR 0021).
 - Never call `startStream()` to reconnect. Use `getStreamClient().reTry(...)`.
 - GL orientation values are fixed by `docs/specs/orientation.md`. Change the spec in the same commit.
 - Every failure: `DiagLogger.logError(CODE, …)` plus `result.error(CODE, …)` and/or an `error` event with the same CODE. No silent `Log.w`. Unexpected exceptions in overlay/zoom calls → `OVERLAY_OPERATION_FAILED` / `ZOOM_OPERATION_FAILED`.

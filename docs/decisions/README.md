@@ -24,3 +24,4 @@ Template: copy [0000-template.md](0000-template.md), take the next number.
 | [0015](0015-cpu-composed-dynamic-layers.md) | CPU-composed dynamic layers on a non-recycling object filter | Accepted |
 | [0016](0016-carousel-dynamic-content.md) | Sponsor carousel as dynamic overlay content | Accepted |
 | [0017](0017-source-native-zoom.md) | Camera zoom in the source, with verify and re-apply | Accepted |
+| [0021](0021-own-usb-permission-flow.md) | Android: own USB permission flow, not libuvc `USBMonitor.register()` | Accepted |

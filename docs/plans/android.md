@@ -198,6 +198,8 @@ frames, using `ImageObjectFilterRender` registered on `GenericStream`'s GL inter
 ## Post-M4 work (no milestone number)
 
 - [x] UVC camera + USB audio sources — [../specs/usb-sources.md](../specs/usb-sources.md)
+- [x] Own USB permission flow for Android 12+ (2026-09-30) — ADR 0021
+- [ ] Device-verify USB permission dialog + `usbDetached` (e.g. MT-VIKI MT-L4UHD switcher)
 - [x] Diagnostics log (`exportDiagnostics` / `clearDiagnostics`) — [../specs/diagnostics.md](../specs/diagnostics.md)
 - [x] Loud overlay failures + `warning` events (2026-05-07)
 - [x] R8 consumer rules for overlays in release builds (2026-05-07)

@@ -21,11 +21,20 @@ await controller.initPreview(config: StreamConfig(
 Pass the same USB fields again in `configure`'s `StreamConfig`.
 
 ## `UsbDeviceRegistry` (created in `onAttachedToEngine`, one per engine)
-- Wraps `USBMonitor`; registered on attach, destroyed on detach.
+- Owns its permission flow (ADR 0021): a receiver for `<package>.flutter_rtmp_broadcaster.USB_PERMISSION` and
+  `ACTION_USB_DEVICE_DETACHED` (`RECEIVER_NOT_EXPORTED` on API 33+), registered on attach, unregistered on detach.
+  `requestPermission` uses `UsbManager.requestPermission` with an explicit (`setPackage`) `PendingIntent`,
+  `FLAG_MUTABLE` on API 31+.
+- Keeps a `USBMonitor` only for `openDevice()`. Never calls `USBMonitor.register()`: libuvc 3.2.0 builds its
+  PendingIntent with flags 0, which throws on targetSdk 31+ and made every request return `false` without a dialog.
 - UVC detection: `deviceClass` 14 (video) or 239 (misc/IAD), or any interface class 14.
 - UAC listing: `AudioManager.GET_DEVICES_INPUTS` with `TYPE_USB_DEVICE` / `TYPE_USB_HEADSET`; empty below API 23.
 - `requestPermission(deviceId, cb)`: immediate `true` if already granted, `false` if not found; else stores
-  a pending callback resolved in `onConnect` (true) / `onCancel` / `onDetach` (false).
+  a pending callback resolved by the permission broadcast (granted or not) or detach (`false`). A newer request for
+  the same device resolves the older one `false`. Failures log `USB_REGISTER_FAILED` /
+  `USB_PERMISSION_REQUEST_FAILED` (DiagLogger only).
+- USB devices with audio input (switchers, capture cards) also need `RECORD_AUDIO` granted before the request, or
+  Android denies it. Host apps should request camera + mic first.
 - Caches `UsbControlBlock` per device; `invalidateDevice` closes and evicts it (done before every new `UvcVideoSource`).
 - Detach → event `{type: usbDetached, deviceId}`.
 
@@ -54,3 +63,4 @@ intent filter with `@xml/usb_device_filter` (see `example/android/app/src/main/A
 ## Known issues
 - Rapid release + reopen can fail with `nativeConnect=-99`; `reinitializeForOrientation` avoids re-prepare when orientation is unchanged.
 - `usbDetached` `deviceId` is not surfaced on `RtmpStatus`.
+- Permission flow fix (ADR 0021) not device-verified as of 2026-09-30.

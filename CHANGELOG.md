@@ -4,6 +4,9 @@
 
 Android implementation; iOS is not implemented yet.
 
+Fixed (2026-09-30, not device-verified):
+- Android USB permission: `requestUsbPermission` returned `false` without a system dialog on Android 12+ for any device not already granted (libuvc 3.2.0 `USBMonitor.register()` fails on targetSdk 31+). The plugin now runs its own permission request and detach receiver; `usbDetached` events are delivered again. ADR 0021.
+
 Fixed (device test 2026-09-15):
 - `statusStream` with more than one listener: each extra listener used to take over the native event channel, so earlier listeners silently stopped receiving events. All listeners now share one stream.
 - The configured `videoBitrate` was ignored after `initPreview` (encoder stuck at 2.5 Mbps). `initPreview` now prepares with `StreamConfig.videoBitrate`; a different bitrate in `configure` is applied at `startStream`; orientation re-prepare keeps the configured bitrate/fps/keyframe. New warning `STREAM_CONFIG_MISMATCH`.
