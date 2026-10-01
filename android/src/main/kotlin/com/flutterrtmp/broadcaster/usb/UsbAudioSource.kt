@@ -177,6 +177,8 @@ class UsbAudioSource(
         running = true
         val mySession = ++session
         DiagLogger.log(TAG, "start: recording state=${record.recordingState} routed=${routedForLog(record)}")
+        val sleepOffsetMs = (SystemClock.elapsedRealtimeNanos() - System.nanoTime()) / 1_000_000
+        DiagLogger.log(TAG, "clock: frames use elapsedRealtimeNanos; boottime-monotonic=${sleepOffsetMs} ms")
 
         val detector = AudioStallDetector({ SystemClock.elapsedRealtime() }, expectedBytesPerSec())
         stallDetector = detector
@@ -191,6 +193,10 @@ class UsbAudioSource(
             val buffer = ByteArray(readBufferBytes)
             var firstFrame = true
             while (running && mySession == session) {
+                // Same clock and moment as RootEncoder's MicrophoneManager: the encoders start at
+                // elapsedRealtimeNanos (CLOCK_BOOTTIME). System.nanoTime() lags it by all deep sleep since boot,
+                // which made every USB audio PTS clamp to 0 and YouTube unable to play the stream (ADR 0024).
+                val frameTimeUs = frameClockUs()
                 val read = record.read(buffer, 0, buffer.size)
                 if (mySession != session) break
                 stats.onRead(buffer, read, SystemClock.elapsedRealtime())
@@ -202,9 +208,9 @@ class UsbAudioSource(
                         mainHandler.post { verifyRoute("firstFrame"); logActiveMics("firstFrame") }
                     }
                     val frame = if (muted) {
-                        Frame(ByteArray(read), 0, read, System.nanoTime() / 1000)
+                        Frame(ByteArray(read), 0, read, frameTimeUs)
                     } else {
-                        Frame(buffer.copyOf(read), 0, read, System.nanoTime() / 1000)
+                        Frame(buffer.copyOf(read), 0, read, frameTimeUs)
                     }
                     getMicrophoneData.inputPCMData(frame)
                 } else if (read < 0 && running) {
@@ -258,6 +264,9 @@ class UsbAudioSource(
         start(data)
         return running
     }
+
+    /** Frame timestamp in µs on RootEncoder's encoder clock (`TimeUtils.getCurrentTimeMicro`). */
+    private fun frameClockUs(): Long = SystemClock.elapsedRealtimeNanos() / 1000
 
     private fun expectedBytesPerSec(): Int {
         val p = createParams ?: return 0

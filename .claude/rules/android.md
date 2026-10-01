@@ -23,6 +23,7 @@ Architecture: `docs/architecture/android.md`. Specs: `docs/specs/overlay-composi
 - The design relies on RootEncoder 2.7.2 and libuvc 3.2.0 internals (`textureLoader` field, `drawFilter` order, `Camera2ApiManager` zoom, `UVCCamera.mZoomMin/mZoomMax`). Re-check ADR 0015 and 0017 on any upgrade.
 - Never call libuvc `USBMonitor.register()` / `requestPermission()`: broken on targetSdk 31+. `UsbDeviceRegistry` owns the permission PendingIntent and receiver (ADR 0021).
 - Never call `startStream()` to reconnect. Use `getStreamClient().reTry(...)`.
+- Custom `AudioSource`/`VideoSource` frames: timestamp with `SystemClock.elapsedRealtimeNanos()/1000` (RootEncoder's `TimeUtils` clock), never `System.nanoTime()` — it lags by deep-sleep time and zeroes the PTS (ADR 0024).
 - GL orientation values are fixed by `docs/specs/orientation.md`. Change the spec in the same commit.
 - Every failure: `DiagLogger.logError(CODE, …)` plus `result.error(CODE, …)` and/or an `error` event with the same CODE. No silent `Log.w`. Unexpected exceptions in overlay/zoom calls → `OVERLAY_OPERATION_FAILED` / `ZOOM_OPERATION_FAILED`.
 - New error/warning code → `docs/specs/channel-contract.md`, the feature spec, and the README error/warning tables.

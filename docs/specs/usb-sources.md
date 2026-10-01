@@ -64,6 +64,9 @@ camera opens, so the `AudioDeviceInfo` id picked by the app may be stale when au
 - `CameraStreamManager.installAudioSource` is used by `initPreviewOnly`, `configure` (fresh **and** reuse) and keeps the
   current source when it already matches; `"mic"` after USB swaps back to `MicrophoneSource`.
 - Every step logs to `DiagLogger` (tag `UsbAudioSource`): available inputs, chosen device + match kind, routed device.
+- Frame timestamps: `SystemClock.elapsedRealtimeNanos()/1000`, taken just before `read()` (ADR 0024). This is
+  RootEncoder's encoder clock (`TimeUtils.getCurrentTimeMicro`); `System.nanoTime()` lags it by all deep sleep since
+  boot and made every audio PTS clamp to 0. `start:` logs `clock: … boottime-monotonic=<ms>`.
 - PCM 16-bit read loop on a daemon thread; mute sends zeroed buffers; negative `read` → `USB_AUDIO_READ_FAILED` log;
   `read == 0` sleeps 5 ms. Read chunk ≤ 4096 bytes, a multiple of 4: RootEncoder's `AudioEncoder` has
   `max-input-size` 8192 and `BaseEncoder.processInput` silently cuts anything above the codec buffer.
