@@ -105,6 +105,9 @@ class _CameraScreenState extends State<CameraScreen> {
           } else if (code == 'USB_AUDIO_STALLED') {
             _audio = AudioSourceState.usbRestarted;
             _showSnack('Audio: USB audio stalled — restarting it');
+          } else if (code == 'AUDIO_INPUT_CLIPPING') {
+            // The mixer/capture card is too hot: speech arrives clipped and crackles. Only the source level fixes it.
+            _showSnack('Mic too loud — turn the mixer/source level down. ${s.errorMessage}');
           } else if (code.startsWith('AUDIO_CLEANUP_')) {
             _cleanup = AudioCleanup.basic;
             _showSnack('Cleanup: $code — ${s.errorMessage}');

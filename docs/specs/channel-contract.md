@@ -174,4 +174,5 @@ by the controller; **EventChannel** `error` event on `statusStream`. Some codes 
 | `AUDIO_CLEANUP_UNAVAILABLE` | `voice` requested but RNNoise can't run (library failed to load, or not 48 kHz); `basic` used instead |
 | `AUDIO_CLEANUP_FAILED` | unexpected error inside mic cleanup; cleanup turned off, raw audio continues (a new `setAudioCleanup` retries) |
 | `AUDIO_CLEANUP_OVERLOAD` | `voice` used > 50 % of real time over 5 s; switched to `basic` |
+| `AUDIO_INPUT_CLIPPING` | mic input arrives clipped (flat tops at a fixed ceiling in > 0.05 % of a 5 s window, ceiling ≥ −20 dBFS); detected in every cleanup mode, USB and phone mic, while streaming; at most once per 30 s. Fix is at the source: lower the mixer/source level |
 | `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again within 30 s of a restart (or the restart failed); the stream now carries the built-in phone mic until the next `initPreview`/`configure`; extra key `reason` |

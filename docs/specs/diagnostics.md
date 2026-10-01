@@ -32,6 +32,9 @@ Purpose: field debugging on release builds where logcat is unavailable or `Log.d
   while USB audio records; `CameraStreamManager` `stream:` (5 s) while streaming: `sentVideo`, `sentAudio`,
   `droppedVideo`, `droppedAudio`, `bytesSent`, `cache`, `audioSrc` from `GenericStreamClient`. These show what
   actually leaves the phone.
+  `CameraStreamManager` `cleanup:` (5 s) while streaming: mic cleanup levels plus `clip=…% ceiling=…dBFS`
+  ([audio-cleanup.md](audio-cleanup.md)). Crackle on speech with a `pcm:` peak that is identical in every speech
+  window (or `CLIPPING`) = the source is clipped; lower the mixer level.
 
 ## Triage recipe
 1. Reproduce, then `exportDiagnostics()` (or `adb shell run-as <pkg> cat files/rtmp_diag.log`).

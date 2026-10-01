@@ -209,4 +209,30 @@ class AudioCleanupChainTest {
         c.process(pcm, 1001)
         assertContentEquals(raw, pcm)
     }
+
+    @Test
+    fun `clipped input warns in every mode, at most once per 30 s`() {
+        var now = 0L
+        val warnings = mutableListOf<String>()
+        val c = AudioCleanupChain(SR, 2, null, { now }, onClipping = { warnings += it }).also { it.mode = AudioCleanupMode.OFF }
+        val clipped = toStereoPcm(sine(220.0, -3.0, 1.0).map { it.coerceIn(-11000f, 11000f) }.toFloatArray())
+
+        feed(c, clipped.copyOf())
+        assertTrue(c.summarize(1000).contains("CLIPPING"))
+        assertEquals(1, warnings.size)
+        assertTrue(warnings[0].contains("-9.5"), warnings[0])
+
+        now += 10_000_000_000L
+        feed(c, clipped.copyOf())
+        c.summarize(1000)
+        assertEquals(1, warnings.size) // rate-limited
+
+        now += 25_000_000_000L
+        feed(c, clipped.copyOf())
+        c.summarize(1000)
+        assertEquals(2, warnings.size)
+
+        feed(c, toStereoPcm(sine(220.0, -40.0, 1.0)))
+        assertTrue(!c.summarize(1000).contains("CLIPPING"))
+    }
 }

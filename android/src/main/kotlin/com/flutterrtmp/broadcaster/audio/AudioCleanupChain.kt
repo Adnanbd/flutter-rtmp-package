@@ -26,7 +26,8 @@ class AudioCleanupChain(
     private val nanoClock: () -> Long = System::nanoTime,
     private val onOverload: (String) -> Unit = {},
     private val onUnavailable: (String) -> Unit = {},
-    private val onFailure: (Throwable) -> Unit = {}
+    private val onFailure: (Throwable) -> Unit = {},
+    private val onClipping: (String) -> Unit = {}
 ) {
     /** Set after an unexpected error; the chain then passes audio through untouched. */
     @Volatile var failed = false
@@ -49,6 +50,8 @@ class AudioCleanupChain(
     private var fadeStep = 1f / (sampleRate * 0.02f)
     private var probe = HumProbe(sampleRate)
     private var unavailableReported = false
+    private val clip = Array(channels) { ClipDetector() }
+    private var lastClipWarnNanos: Long? = null
 
     // Window stats, reset by summarize().
     private var inSumSq = 0.0
@@ -118,6 +121,7 @@ class AudioCleanupChain(
                 val x = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toFloat()
                 inSumSq += x.toDouble() * x
                 if (c == 0) probe.next(x, !gate.isOpen)
+                clip[c].next(x)
                 if (abs(x) > inPeak) inPeak = abs(x)
                 tmp[c] = if (off) x else stagesBeforeDynamics(c, x)
             }
@@ -234,10 +238,30 @@ class AudioCleanupChain(
             "gate_open=${if (frames > 0) gateOpenFrames * 100 / frames else 0}% " +
             "vad=${if (vadFrames > 0) "%.2f".format(java.util.Locale.US, vadSum / vadFrames) else "n/a"} " +
             "gain=${"%.1f".format(java.util.Locale.US, 20 * log10(agc.gain.toDouble()))}dB " +
-            "cpu=${"%.1f".format(java.util.Locale.US, cpuPct)}% window=${windowMs}ms" +
+            "cpu=${"%.1f".format(java.util.Locale.US, cpuPct)}% window=${windowMs}ms " +
+            clipSummary() +
             (probe.summarize()?.let { " | noise: $it" } ?: "")
         inSumSq = 0.0; outSumSq = 0.0; frames = 0; gateOpenFrames = 0; vadSum = 0.0; vadFrames = 0; cpuNanos = 0
         return line
+    }
+
+    /** `clip=…% ceiling=…dBFS`; fires [onClipping] at most once per [CLIP_WARN_INTERVAL_NANOS] while clipping. */
+    private fun clipSummary(): String {
+        val r = ClipDetector.merge(clip.map { it.summarize() })
+        val ceiling = "%.1f".format(java.util.Locale.US, r.ceilingDbfs)
+        if (r.clipping) {
+            val now = nanoClock()
+            val last = lastClipWarnNanos
+            if (last == null || now - last >= CLIP_WARN_INTERVAL_NANOS) {
+                lastClipWarnNanos = now
+                try {
+                    onClipping("Mic input is clipping at $ceiling dBFS before it reaches the phone (crackle on loud " +
+                        "speech); lower the mixer or source output level")
+                } catch (_: Throwable) {}
+            }
+        }
+        return "clip=${"%.2f".format(java.util.Locale.US, r.ratio * 100)}% ceiling=${ceiling}dBFS" +
+            (if (r.clipping) " CLIPPING" else "")
     }
 
     @Synchronized
@@ -255,5 +279,6 @@ class AudioCleanupChain(
     companion object {
         /** Mains hum in Bangladesh/most of the world is 50 Hz; the notches also catch its first two harmonics. */
         val HUM_HZ = listOf(50.0, 100.0, 150.0)
+        const val CLIP_WARN_INTERVAL_NANOS = 30_000_000_000L
     }
 }

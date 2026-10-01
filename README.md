@@ -1571,6 +1571,7 @@ Sent as `warning` events (`RtmpStatus.errorCode`). The stream keeps running.
 | `AUDIO_CLEANUP_UNAVAILABLE` | `voice` cleanup couldn't run RNNoise on this device; `basic` cleanup is used |
 | `AUDIO_CLEANUP_FAILED` | Mic cleanup hit an unexpected error and turned itself off; the stream continues with raw audio |
 | `AUDIO_CLEANUP_OVERLOAD` | The phone was too slow for `voice` cleanup; switched to `basic` |
+| `AUDIO_INPUT_CLIPPING` | The mic signal is already clipped when it reaches the phone (crackle on loud speech). Tell the user to lower the mixer/source output level; no software filter can fix it |
 | `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again after the restart; **the stream now uses the phone microphone**. Show this to the user; restart the stream to try USB again |
 
 Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract.md).
@@ -1596,6 +1597,11 @@ await controller.setAudioCleanup(AudioCleanup.off);   // live A/B while streamin
 
 `voice` falls back to `basic` with warning `AUDIO_CLEANUP_UNAVAILABLE` / `AUDIO_CLEANUP_OVERLOAD`. Diagnostics log a
 `cleanup:` line every 5 s while live (levels, gate, gain, CPU, and `noise: humNN=…` to tell hum from hiss).
+**Mic level matters more than any filter.** If the mixer or capture card is set too hot, loud speech is clipped
+before the phone gets it and crackles ("tut tut") in every mode. The plugin detects this and sends warning
+`AUDIO_INPUT_CLIPPING`; the `cleanup:` diagnostics line shows `clip=…% ceiling=…dBFS`. Lower the source level until
+speech peaks stay well below the ceiling; `voice`/`basic` gain brings the loudness back.
+
 Not device-verified as of 2026-10-01. Details: [docs/specs/audio-cleanup.md](docs/specs/audio-cleanup.md).
 
 ## Limits

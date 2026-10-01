@@ -10,6 +10,7 @@ Fixed (2026-09-30, not device-verified):
 
 Added (2026-10-01, not device-verified):
 - Android mic noise cleanup: `StreamConfig.audioCleanup` and `RtmpBroadcastController.setAudioCleanup(AudioCleanup.off | basic | voice)` (live-safe). `voice` runs high-pass, 50/100/150 Hz hum notches, RNNoise, noise gate, auto gain and limiter on the USB and phone mic. New warnings `AUDIO_CLEANUP_UNAVAILABLE`, `AUDIO_CLEANUP_OVERLOAD`. Bundles RNNoise 0.2 (BSD-3) as a native library (~1.4 MB per ABI); the package now needs the NDK. ADR 0025.
+- Warning `AUDIO_INPUT_CLIPPING`: the mic signal arrives already clipped (field case: MT-VIKI/MS2109 input flat at −9.5 dBFS, heard as crackle on speech in every cleanup mode). Detected on the input in every mode, at most once per 30 s; `cleanup:` diagnostics add `clip=…% ceiling=…dBFS`. Fix is lowering the mixer/source level.
 - **Changed:** stream audio is now AAC 48 kHz (was 44.1 kHz; still used if a device can't record 48 kHz). Cleanup errors never crash: they turn cleanup off with warning `AUDIO_CLEANUP_FAILED`.
 
 Fixed (2026-10-01, not device-verified):

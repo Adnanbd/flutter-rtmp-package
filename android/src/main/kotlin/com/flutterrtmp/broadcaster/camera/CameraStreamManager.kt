@@ -340,7 +340,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             mainHandler.post {
                 emitWarn("AUDIO_CLEANUP_FAILED", "Mic cleanup hit an error and was turned off; the stream continues with raw audio. ${t.message ?: ""}")
             }
-        }
+        },
+        onClipping = { msg -> mainHandler.post { emitWarn("AUDIO_INPUT_CLIPPING", msg) } }
     )
 
     /**

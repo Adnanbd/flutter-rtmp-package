@@ -1,7 +1,7 @@
 # Spec — Mic audio cleanup (hum / static / hiss) — Android only
 
 **Source of truth:** `android/.../audio/` (`AudioCleanupChain`, `Biquad`, `Dynamics.kt`, `HumProbe`, `Denoiser`,
-`RnnoiseNative`, `CleanupAudioEffect`), `android/src/main/cpp/` (vendored RNNoise 0.2 + `rnnoise_jni.c`).
+`RnnoiseNative`, `CleanupAudioEffect`, `ClipDetector`), `android/src/main/cpp/` (vendored RNNoise 0.2 + `rnnoise_jni.c`).
 Decision: [ADR 0025](../decisions/0025-audio-cleanup.md). Not device-verified as of 2026-10-01.
 
 ## API
@@ -13,7 +13,8 @@ Decision: [ADR 0025](../decisions/0025-audio-cleanup.md). Not device-verified as
   The USB read loop and its watchdog are wrapped too. Native crashes inside RNNoise itself can't be caught.
 - Audio rate: 48 kHz; a device whose `prepareAudio(48000)` fails gets 44.1 kHz (stream still starts; `voice` → `basic`).
 - Warnings: `AUDIO_CLEANUP_UNAVAILABLE` (RNNoise library didn't load, or stream not 48 kHz → `basic`),
-  `AUDIO_CLEANUP_OVERLOAD` (`voice` > 50 % of real time over 5 s → `basic`).
+  `AUDIO_CLEANUP_OVERLOAD` (`voice` > 50 % of real time over 5 s → `basic`),
+  `AUDIO_INPUT_CLIPPING` (input already clipped; see Input clipping).
 
 ## Where it runs
 - One `AudioCleanupChain` per `CameraStreamManager`, 48 kHz stereo 16-bit (the stream's audio is prepared at 48 kHz).
@@ -34,9 +35,22 @@ Decision: [ADR 0025](../decisions/0025-audio-cleanup.md). Not device-verified as
 - `off` returns the input byte-for-byte. A mode change rebuilds state (closes RNNoise states) and fades in over 20 ms.
 
 ## Diagnostics (every 5 s while streaming, `CameraStreamManager` tag)
-`cleanup: mode=… effective=… in_rms=…dBFS out_rms=…dBFS gate_open=…% vad=… gain=…dB cpu=…% window=…ms | noise: hum50=…dBFS hum100=… hum150=… noise=…dBFS humShare=…% blocks=…`
+`cleanup: mode=… effective=… in_rms=…dBFS out_rms=…dBFS gate_open=…% vad=… gain=…dB cpu=…% window=…ms clip=…% ceiling=…dBFS [CLIPPING] | noise: hum50=…dBFS hum100=… hum150=… noise=…dBFS humShare=…% blocks=…`
 - `noise:` comes from `HumProbe`: Goertzel at 50/100/150 Hz over 100 ms blocks of the **input** (left channel) that were
   entirely gate-closed (no speech). High `humShare` = earthing hum; low = broadband hiss/static. Absent when no quiet block.
+
+## Input clipping
+No filter can repair audio that was clipped before it reached the phone; flattened peaks sound like crackle on loud
+syllables ("tut tut"), with cleanup on or off. Field case 2026-10-01: MT-VIKI (MS2109) input peaked at exactly
+−9.5 dBFS in every speech window. Fix: lower the mixer/source level until speech peaks stay ~6 dB below the ceiling;
+AGC and the limiter restore loudness.
+- `ClipDetector`, one per channel, on the chain **input** in every mode (`off` too): counts samples in runs of ≥ 3
+  consecutive samples within 1.5 LSB of the window peak (a real wave's top is curved; a clipped one is flat).
+  Clipping = flat samples ≥ 0.05 % of the window and peak ≥ −20 dBFS. Worst channel wins.
+- Evaluated in each 5 s `cleanup:` summary (only while streaming); `AUDIO_INPUT_CLIPPING` at most once per 30 s.
+- Limits: an analog clip followed by filtering in the capture chip may not be exactly flat and can go undetected;
+  then a `pcm:` peak that is identical in every speech window is the tell. A steady low-frequency test tone can
+  trigger it.
 
 ## Native build
 - `android/build.gradle` → `externalNativeBuild.cmake` (`src/main/cpp/CMakeLists.txt`, CMake 3.22.1, app's NDK).
@@ -46,5 +60,5 @@ Decision: [ADR 0025](../decisions/0025-audio-cleanup.md). Not device-verified as
 
 ## Tests
 `android/src/test/kotlin/.../audio/`: `FiltersTest` (high-pass, notch, limiter, gate, AGC), `HumProbeTest`,
-`AudioCleanupChainTest` (off is bit-exact, hum removed under speech, hiss pulled down, RNNoise latency, length,
+`ClipDetectorTest`, `AudioCleanupChainTest` (clipping warning + rate limit, off is bit-exact, hum removed under speech, hiss pulled down, RNNoise latency, length,
 unavailable/44.1 kHz fallback, mode switch, CPU guard, summary). RNNoise itself is not run on the JVM (fake denoiser).

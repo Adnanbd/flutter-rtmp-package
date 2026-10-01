@@ -35,6 +35,7 @@ Path-specific rules load automatically from `.claude/rules/` when you touch `lib
 - No device spikes. Device checks are batched at the end of a milestone; until they pass, docs say "not device-verified".
 - M11–M13 merged to `main` 2026-09-15 (not published to pub.dev). **The user commits manually**: don't commit, push, tag, merge or publish unless asked. Merge only on approval.
 - Every new capability gets an example hook usable before and during a stream, with mock data (Overlay Studio / Go Live screen).
+- Host app builds/APKs (`../apivideo_test`): never build or analyze against the local package (no `pubspec_overrides.yaml` / path override). Commit + push the package first (with approval), then `flutter pub upgrade flutter_rtmp_broadcaster` in the host so `pubspec.lock` points at the pushed commit, then build. (User rule, 2026-10-01.)
 
 ## Where to look
 
