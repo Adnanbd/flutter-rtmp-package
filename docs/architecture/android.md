@@ -37,7 +37,8 @@ kotlin/com/flutterrtmp/broadcaster/
 │   └── SponsorConfig.kt              Channel map → data class.
 ├── rtmp/RtmpConnectChecker.kt        ConnectChecker → EventChannel (main thread, 32-event buffer).
 ├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource
-│                                     (+ pure UsbAudioRouting: USB input selection, ADR 0022).
+│                                     (+ pure UsbAudioRouting: USB input selection, ADR 0022;
+│                                     pure AudioStallDetector + PcmStats: stall watchdog and PCM telemetry, ADR 0023).
 └── diag/                             DiagLogger (file log + uncaught handler), EndpointRedactor (safe endpoint logging).
 ```
 

@@ -1202,6 +1202,17 @@ Future<void> startWithUsbSources(RtmpBroadcastController controller) async {
 - USB audio: the input is matched by id, then by product name, then the first USB input (so a missing
   `usbAudioDeviceId` still uses USB). If none is attached, or Android routes recording elsewhere, the stream uses the
   phone microphone and you get warning `USB_AUDIO_DEVICE_NOT_FOUND` / `USB_AUDIO_NOT_ROUTED`. Not device-verified as of 2026-09-30.
+- USB audio that stops mid-stream would leave YouTube with nothing to play, so the plugin restarts it once
+  (`USB_AUDIO_STALLED`) and, if it stalls again within 30 s, switches the stream to the phone microphone
+  (`USB_AUDIO_FALLBACK_PHONE_MIC`). Show the fallback clearly in your UI, e.g. a banner plus an audio-source chip:
+  ```dart
+  controller.statusStream.listen((s) {
+    if (s.type == RtmpStatusType.warning && s.errorCode == 'USB_AUDIO_FALLBACK_PHONE_MIC') {
+      showBanner('USB audio failed — the stream is using the PHONE MICROPHONE');
+    }
+  });
+  ```
+  Not device-verified as of 2026-10-01.
 
 ---
 
@@ -1554,6 +1565,8 @@ Sent as `warning` events (`RtmpStatus.errorCode`). The stream keeps running.
 | `ZOOM_REAPPLY_FAILED` | The kept zoom couldn't be applied again within 3 s after the camera reopened; it is retried on the next open |
 | `USB_AUDIO_DEVICE_NOT_FOUND` | `AudioInput.usb` selected but no USB audio input is attached; the phone microphone is used |
 | `USB_AUDIO_NOT_ROUTED` | Android recorded from another input (e.g. phone mic) instead of the USB input; the plugin asked to re-route |
+| `USB_AUDIO_STALLED` | The USB audio input stopped delivering sound during the stream; the plugin restarted it |
+| `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again after the restart; **the stream now uses the phone microphone**. Show this to the user; restart the stream to try USB again |
 
 Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract.md).
 
@@ -1625,7 +1638,10 @@ Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract
 
 - Permission gate screen.
 - Config screen: RTMP URL and key, resolution, orientation, bitrate (preset or custom), sponsor images from the gallery
-  with position and layer weight, scoreband weight, diagnostics export.
+  with position and layer weight, scoreband weight, USB camera/audio pickers (a single USB audio input is selected
+  automatically), diagnostics export and clear.
+- Go Live screen: audio-source chip (USB / USB restarted / PHONE MIC — USB failed), a red banner on
+  `USB_AUDIO_FALLBACK_PHONE_MIC`, and a Diagnostics button to read the native log mid-stream.
 - Go Live screen: camera preview, go live / stop, camera flip, mute, pinch zoom with a zoom slider and 1× / 2× / 5×
   presets, and a live scoreband with mock cricket data.
 - **Overlay Studio** (layers button, top-right; works before and during a stream):

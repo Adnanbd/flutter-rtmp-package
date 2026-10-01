@@ -12,6 +12,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.pedro.encoder.Frame
@@ -25,17 +26,27 @@ import com.pedro.encoder.input.sources.audio.AudioSource
  * device opens its camera, so this source resolves the input again right before recording,
  * checks where Android actually routed it, re-routes on changes, and reports every fallback to
  * the built-in mic through [onIssue] (→ `warning` event) instead of failing silently.
+ *
+ * While recording it also watches the PCM flow (ADR 0023): a 5 s `pcm:` summary and a 30 s `mics:` line go to
+ * DiagLogger, and [onStall] fires (main thread, once per recording session) when the input stops delivering.
+ * The owner decides what to do: [restartCapture] or swap to the phone mic.
  */
 class UsbAudioSource(
     private val context: Context,
     usbAudioDeviceId: Int?,
-    private val onIssue: (code: String, message: String, details: Map<String, Any?>) -> Unit = { _, _, _ -> }
+    private val onIssue: (code: String, message: String, details: Map<String, Any?>) -> Unit = { _, _, _ -> },
+    private val onStall: (source: UsbAudioSource, reason: String) -> Unit = { _, _ -> }
 ) : AudioSource() {
 
     companion object {
         private const val TAG = "UsbAudioSource"
         const val CODE_NOT_FOUND = "USB_AUDIO_DEVICE_NOT_FOUND"
         const val CODE_NOT_ROUTED = "USB_AUDIO_NOT_ROUTED"
+        /** AudioEncoder's max-input-size is 8192 and BaseEncoder cuts anything above the codec buffer. */
+        private const val MAX_READ_BYTES = 4096
+        private const val WATCH_INTERVAL_MS = 500L
+        private const val PCM_LOG_INTERVAL_MS = 5_000L
+        private const val MICS_LOG_INTERVAL_MS = 30_000L
     }
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -57,6 +68,39 @@ class UsbAudioSource(
     private var routingListener: Any? = null
     private var deviceCallback: AudioDeviceCallback? = null
 
+    /** create() params, kept for [restartCapture]. */
+    private var createParams: IntArray? = null
+    private var micData: GetMicrophoneData? = null
+    /** Bumped per start(); an old read thread exits when it no longer matches. */
+    @Volatile private var session = 0
+    private val stats = PcmStats()
+    private var stallDetector: AudioStallDetector? = null
+    private var stallReported = false
+    private var lastPcmLogAt = 0L
+    private var lastMicsLogAt = 0L
+    private val watchdog = object : Runnable {
+        override fun run() {
+            if (!running) return
+            val now = SystemClock.elapsedRealtime()
+            val expected = expectedBytesPerSec()
+            if (now - lastPcmLogAt >= PCM_LOG_INTERVAL_MS) {
+                DiagLogger.log(TAG, "pcm: ${stats.summarize(now - lastPcmLogAt, expected)}")
+                lastPcmLogAt = now
+            }
+            if (now - lastMicsLogAt >= MICS_LOG_INTERVAL_MS) logActiveMics("periodic")
+            if (!stallReported) {
+                stallDetector?.check()?.let { reason ->
+                    stallReported = true
+                    DiagLogger.logError("USB_AUDIO_STALLED", "$reason routed=${audioRecord?.let { routedForLog(it) }}")
+                    // The owner restarts (start() re-arms this watchdog) or swaps the source (stop() ends it).
+                    onStall(this@UsbAudioSource, reason)
+                    return
+                }
+            }
+            if (running) mainHandler.postDelayed(this, WATCH_INTERVAL_MS)
+        }
+    }
+
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             wantedName = listInputs().firstOrNull { it.id == usbAudioDeviceId }?.productName
@@ -64,6 +108,14 @@ class UsbAudioSource(
         DiagLogger.log(TAG, "new: requestedId=$usbAudioDeviceId name=$wantedName inputs=${inputsForLog()}")
         if (usbAudioDeviceId == null) {
             DiagLogger.log(TAG, "new: no usbAudioDeviceId given — will use the first USB input")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+                .filter { UsbAudioRouting.isUsbType(it.type) }
+                .forEach {
+                    DiagLogger.log(TAG, "new: caps ${it.toInfo()} sampleRates=${it.sampleRates.contentToString()} " +
+                        "channelCounts=${it.channelCounts.contentToString()} encodings=${it.encodings.contentToString()}")
+                }
         }
     }
 
@@ -86,8 +138,11 @@ class UsbAudioSource(
                 return false
             }
             audioRecord = record
-            readBufferBytes = bufferSize
-            DiagLogger.log(TAG, "create: sampleRate=$sampleRate stereo=$isStereo wantedId=$wantedId")
+            // Multiple of one stereo 16-bit frame and below the AAC encoder's input limit.
+            readBufferBytes = (minOf(bufferSize, MAX_READ_BYTES) / 4).coerceAtLeast(1) * 4
+            createParams = intArrayOf(sampleRate, if (isStereo) 1 else 0, if (echoCanceler) 1 else 0, if (noiseSuppressor) 1 else 0)
+            DiagLogger.log(TAG, "create: sampleRate=$sampleRate stereo=$isStereo wantedId=$wantedId " +
+                "minBuffer=$bufferSize readChunk=$readBufferBytes")
             applyPreferredDevice("create")
             true
         } catch (e: Exception) {
@@ -111,25 +166,40 @@ class UsbAudioSource(
             DiagLogger.logError("USB_AUDIO_INIT_FAILED", "start: no AudioRecord (create failed or not called)")
             return
         }
+        micData = getMicrophoneData
         notRoutedWarned = false
         notFoundWarned = false
+        stallReported = false
         // The camera of a composite device is open by now; its audio input may have a new id.
         applyPreferredDevice("start")
         registerRoutingWatchers(record)
         record.startRecording()
         running = true
+        val mySession = ++session
         DiagLogger.log(TAG, "start: recording state=${record.recordingState} routed=${routedForLog(record)}")
+
+        val detector = AudioStallDetector({ SystemClock.elapsedRealtime() }, expectedBytesPerSec())
+        stallDetector = detector
+        detector.start()
+        stats.summarize(0, 0) // reset
+        lastPcmLogAt = SystemClock.elapsedRealtime()
+        lastMicsLogAt = lastPcmLogAt
+        mainHandler.removeCallbacks(watchdog)
+        mainHandler.postDelayed(watchdog, WATCH_INTERVAL_MS)
 
         readThread = Thread({
             val buffer = ByteArray(readBufferBytes)
             var firstFrame = true
-            while (running) {
+            while (running && mySession == session) {
                 val read = record.read(buffer, 0, buffer.size)
+                if (mySession != session) break
+                stats.onRead(buffer, read, SystemClock.elapsedRealtime())
                 if (read > 0) {
+                    detector.onBytes(read)
                     if (firstFrame) {
                         firstFrame = false
                         // routedDevice is reliable once audio flows.
-                        mainHandler.post { verifyRoute("firstFrame") }
+                        mainHandler.post { verifyRoute("firstFrame"); logActiveMics("firstFrame") }
                     }
                     val frame = if (muted) {
                         Frame(ByteArray(read), 0, read, System.nanoTime() / 1000)
@@ -140,6 +210,8 @@ class UsbAudioSource(
                 } else if (read < 0 && running) {
                     DiagLogger.logError("USB_AUDIO_READ_FAILED", "AudioRecord.read returned $read")
                     break
+                } else if (read == 0) {
+                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
                 }
             }
         }, "UsbAudioSource").also { it.isDaemon = true }
@@ -148,6 +220,9 @@ class UsbAudioSource(
 
     override fun stop() {
         running = false
+        session++
+        mainHandler.removeCallbacks(watchdog)
+        stallDetector?.stop()
         readThread?.interrupt()
         readThread = null
         unregisterRoutingWatchers()
@@ -163,6 +238,65 @@ class UsbAudioSource(
     }
 
     override fun isRunning(): Boolean = running
+
+    /**
+     * Re-opens the USB input: new AudioRecord, device resolved again, recording restarted with the same
+     * encoder callback. Returns false when it couldn't (the owner then falls back to the phone mic).
+     */
+    fun restartCapture(): Boolean {
+        val data = micData
+        val p = createParams
+        if (data == null || p == null) {
+            DiagLogger.logError("USB_AUDIO_STALLED", "restartCapture: never started")
+            return false
+        }
+        DiagLogger.log(TAG, "restartCapture: reopening USB input wantedId=$wantedId")
+        stop()
+        try { audioRecord?.release() } catch (_: Exception) {}
+        audioRecord = null
+        if (!create(p[0], p[1] == 1, p[2] == 1, p[3] == 1)) return false
+        start(data)
+        return running
+    }
+
+    private fun expectedBytesPerSec(): Int {
+        val p = createParams ?: return 0
+        return p[0] * (if (p[1] == 1) 2 else 1) * 2
+    }
+
+    /** Physical mics in use (API 28) and the system's view of active recordings (API 24). */
+    private fun logActiveMics(where: String) {
+        lastMicsLogAt = SystemClock.elapsedRealtime()
+        val record = audioRecord ?: return
+        try {
+            val mics = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                record.activeMicrophones.joinToString(prefix = "[", postfix = "]") {
+                    "${it.description}(type=${UsbAudioRouting.typeName(it.type)} location=${micLocation(it.location)} addr=${it.address})"
+                }
+            } else {
+                "n/a(api<28)"
+            }
+            val configs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                audioManager.activeRecordingConfigurations.joinToString(prefix = "[", postfix = "]") { c ->
+                    val dev = c.audioDevice?.toInfo()?.toString() ?: "unknown"
+                    val silenced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) " silenced=${c.isClientSilenced}" else ""
+                    "source=${c.clientAudioSource} device=$dev rate=${c.format.sampleRate}$silenced"
+                }
+            } else {
+                "n/a(api<24)"
+            }
+            DiagLogger.log(TAG, "mics[$where]: active=$mics recordings=$configs")
+        } catch (e: Exception) {
+            DiagLogger.log(TAG, "mics[$where]: query failed ${e.message}")
+        }
+    }
+
+    private fun micLocation(location: Int): String = when (location) {
+        1 -> "MAINBODY"
+        2 -> "MAINBODY_MOVABLE"
+        3 -> "PERIPHERAL"
+        else -> "UNKNOWN($location)"
+    }
 
     fun mute() { muted = true }
     fun unMute() { muted = false }

@@ -7,6 +7,10 @@ Android implementation; iOS is not implemented yet.
 Fixed (2026-09-30, not device-verified):
 - Android USB audio: with a USB audio input selected, the stream could carry the phone microphone with no warning. `UsbAudioSource` now resolves the USB input again right before recording (id → product name → first USB input), checks the actual route, re-routes on change, and sends new warnings `USB_AUDIO_DEVICE_NOT_FOUND` / `USB_AUDIO_NOT_ROUTED`. `configure()` after `initPreview()` now applies a changed audio input. ADR 0022.
 - Android USB audio crashed on Android 5.x (API 21/22): the read loop called API 23 `AudioRecord.bufferSizeInFrames`.
+
+Fixed (2026-10-01, not device-verified):
+- Android USB audio: with an MS2109-based USB audio input (MT-VIKI switcher) YouTube received nothing, while USB video + phone mic worked. USB audio is now watched while streaming: if it stops delivering sound it is restarted once (warning `USB_AUDIO_STALLED`), and if it stalls again within 30 s the stream switches to the phone microphone (warning `USB_AUDIO_FALLBACK_PHONE_MIC`) instead of going blank. Read chunks are capped at 4096 bytes (the AAC encoder silently cut larger ones). New 5 s diagnostics lines `pcm:` and `stream:` and a `mics[…]:` line with the physical microphone in use. ADR 0023.
+- Example: Go Live screen shows the audio source (chip + red banner on fallback) and has a Diagnostics button.
 - Diagnostics log leaked the RTMP stream key (`startStream` line printed the full endpoint). Endpoints are now redacted to `scheme://host/app/***`.
 - Android USB permission: `requestUsbPermission` returned `false` without a system dialog on Android 12+ for any device not already granted (libuvc 3.2.0 `USBMonitor.register()` fails on targetSdk 31+). The plugin now runs its own permission request and detach receiver; `usbDetached` events are delivered again. ADR 0021.
 

@@ -44,6 +44,8 @@ class CameraStreamManager(
         private const val AUDIO_BITRATE = 128_000
         private const val MAX_RECONNECT_ATTEMPTS = 3
         private const val RECONNECT_DELAY_MS = 3000L
+        private const val USB_RESTART_WINDOW_MS = 30_000L
+        private const val STREAM_STATS_INTERVAL_MS = 5_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -293,9 +295,12 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                     DiagLogger.log(TAG, "$where: audio already USB (${audioSourceForLog()})")
                     return
                 }
-                val usbAudio = UsbAudioSource(context, usbAudioDeviceId) { code, message, details ->
-                    mainHandler.post { emitWarn(code, message, details) }
-                }
+                val usbAudio = UsbAudioSource(
+                    context, usbAudioDeviceId,
+                    onIssue = { code, message, details -> mainHandler.post { emitWarn(code, message, details) } },
+                    onStall = { src, reason -> onUsbAudioStall(src, reason) }
+                )
+                usbRestartAt = 0L
                 genericStream.changeAudioSource(usbAudio)
                 DiagLogger.log(TAG, "$where: audio -> USB requestedId=$usbAudioDeviceId")
             }
@@ -307,6 +312,76 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 genericStream.changeAudioSource(MicrophoneSource())
                 DiagLogger.log(TAG, "$where: audio USB -> phone mic (requested $audioInput)")
             }
+        }
+    }
+
+    /** Last USB capture restart (elapsedRealtime), 0 = none in this session (ADR 0023). */
+    private var usbRestartAt = 0L
+
+    /**
+     * USB audio stopped delivering PCM (main thread). A stalled input leaves YouTube with no playable stream,
+     * so: restart USB capture once; a second stall within 30 s (or a failed restart) swaps to the phone mic.
+     */
+    private fun onUsbAudioStall(src: UsbAudioSource, reason: String) {
+        if (genericStream.audioSource !== src) return
+        val now = SystemClock.elapsedRealtime()
+        if (usbRestartAt == 0L || now - usbRestartAt > USB_RESTART_WINDOW_MS) {
+            usbRestartAt = now
+            emitWarn(
+                "USB_AUDIO_STALLED",
+                "USB audio stopped delivering sound ($reason). Restarting USB audio.",
+                mapOf("reason" to reason)
+            )
+            val ok = try { src.restartCapture() } catch (t: Throwable) {
+                DiagLogger.logError("USB_AUDIO_STALLED", "restartCapture threw", t)
+                false
+            }
+            DiagLogger.log(TAG, "usbAudioStall: restart ok=$ok")
+            if (!ok) fallbackToPhoneMic(src, "restart failed after: $reason")
+        } else {
+            fallbackToPhoneMic(src, "stalled again after restart: $reason")
+        }
+    }
+
+    private fun fallbackToPhoneMic(src: UsbAudioSource, reason: String) {
+        val mic = MicrophoneSource()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            // Android may route the default input to an attached USB device; ask for the built-in mic explicitly.
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS)
+                .firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC }
+                ?.let { mic.setPreferredDevice(it) }
+        }
+        val wasMuted = src.isMuted()
+        try {
+            genericStream.changeAudioSource(mic)
+        } catch (t: Throwable) {
+            DiagLogger.logError("USB_AUDIO_FALLBACK_PHONE_MIC", "changeAudioSource(phone mic) threw", t)
+            emitErr("USB_AUDIO_FALLBACK_PHONE_MIC", "USB audio failed and the phone mic could not be started: ${t.message}")
+            return
+        }
+        if (wasMuted) mic.mute()
+        DiagLogger.logError("USB_AUDIO_FALLBACK_PHONE_MIC", "$reason → now streaming phone mic")
+        emitWarn(
+            "USB_AUDIO_FALLBACK_PHONE_MIC",
+            "USB audio stopped. Now streaming the phone microphone. Check the USB audio device, then restart the stream to try USB again.",
+            mapOf("reason" to reason)
+        )
+    }
+
+    // What actually leaves the phone, every 5 s while streaming (docs/specs/diagnostics.md).
+    private val streamStatsLogger = object : Runnable {
+        override fun run() {
+            if (!genericStream.isStreaming) return
+            try {
+                val c = genericStream.getStreamClient()
+                DiagLogger.log(TAG, "stream: sentVideo=${c.getSentVideoFrames()} sentAudio=${c.getSentAudioFrames()} " +
+                    "droppedVideo=${c.getDroppedVideoFrames()} droppedAudio=${c.getDroppedAudioFrames()} " +
+                    "bytesSent=${c.getBytesSend()} cache=${c.getItemsInCache()} audioSrc=${audioSourceForLog()}")
+            } catch (t: Throwable) {
+                DiagLogger.log(TAG, "stream: stats failed ${t.message}")
+            }
+            mainHandler.postDelayed(this, STREAM_STATS_INTERVAL_MS)
         }
     }
 
@@ -531,6 +606,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             emitErr("STREAM_START_THREW", t.message ?: "Unknown")
             throw t
         }
+        mainHandler.removeCallbacks(streamStatsLogger)
+        mainHandler.postDelayed(streamStatsLogger, STREAM_STATS_INTERVAL_MS)
         // Encoders run from here; a bitrate the prepared encoder doesn't have yet is applied on the fly.
         pendingBitrate?.let {
             genericStream.setVideoBitrateOnFly(it)
@@ -569,6 +646,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         intentionalStop = true
         reconnectAttempt = 0
         dynamicOverlays.setLive(false)
+        mainHandler.removeCallbacks(streamStatsLogger)
         // stopStream() also cancels any in-flight reTry() inside the stream client.
         genericStream.stopStream()
     }
@@ -703,6 +781,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         reconnectAttempt = 0
         dynamicOverlays.setLive(false)
         dynamicOverlays.attachHost(null)
+        mainHandler.removeCallbacks(streamStatsLogger)
         zoom.release()
         if (isPreviewReady) overlayFilterManager?.release(genericStream)
         if (genericStream.isOnPreview) genericStream.stopPreview()

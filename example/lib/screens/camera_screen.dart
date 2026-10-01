@@ -11,7 +11,9 @@ import '../overlay_studio/overlay_studio_sheet.dart';
 import '../overlay_studio/stream_hud.dart';
 import '../overlay_studio/studio_scenarios.dart';
 import '../overlay_studio/widget_capture.dart';
+import '../widgets/audio_source_chip.dart';
 import '../widgets/camera_controls_bar.dart';
+import '../widgets/diagnostics_dialog.dart';
 import '../widgets/zoom_control.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -41,6 +43,8 @@ class _CameraScreenState extends State<CameraScreen> {
   int _matchTime = 0;
   bool _previewBound = false;
   bool _scorebandPushed = false;
+  late AudioSourceState _audio;
+  ScaffoldMessengerState? _bannerMessenger;
 
   late final OverlayStudio _studio;
   late final AutoDemo _demo;
@@ -67,6 +71,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _statusSub = widget.controller.statusStream.listen(_onStatus);
     widget.controller.previewBound.addListener(_onPreviewBoundChanged);
     _previewBound = widget.controller.previewBound.value;
+    _audio = widget.controller.config.audioInput == AudioInput.usb ? AudioSourceState.usb : AudioSourceState.phoneMic;
   }
 
   void _onScorebandWeightChanged() {
@@ -90,7 +95,18 @@ class _CameraScreenState extends State<CameraScreen> {
           _showSnack('Error: ${s.errorCode} — ${s.errorMessage}');
         case RtmpStatusType.warning:
           // Overlay warnings are shown in the Overlay Studio log / HUD instead.
-          if (!(s.errorCode ?? '').startsWith('OVERLAY_')) _showSnack('Warning: ${s.errorCode} — ${s.errorMessage}');
+          final code = s.errorCode ?? '';
+          if (code == 'USB_AUDIO_FALLBACK_PHONE_MIC') {
+            _audio = AudioSourceState.phoneMicFallback;
+            _showAudioBanner(s.errorMessage ?? 'USB audio failed; streaming the phone microphone.');
+          } else if (code == 'USB_AUDIO_STALLED') {
+            _audio = AudioSourceState.usbRestarted;
+            _showSnack('Audio: USB audio stalled — restarting it');
+          } else if (code.startsWith('USB_AUDIO_')) {
+            _showSnack('Audio: $code — ${s.errorMessage}');
+          } else if (!code.startsWith('OVERLAY_')) {
+            _showSnack('Warning: $code — ${s.errorMessage}');
+          }
         case RtmpStatusType.bitrate:
         case RtmpStatusType.reconnecting:
         case RtmpStatusType.previewBound:
@@ -164,6 +180,25 @@ class _CameraScreenState extends State<CameraScreen> {
     });
   }
 
+  /// Stays until dismissed: the stream's audio source changed under the user.
+  void _showAudioBanner(String message) {
+    if (!mounted) return;
+    final messenger = _bannerMessenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(MaterialBanner(
+      backgroundColor: Colors.red.shade50,
+      leading: Icon(Icons.mic_off, color: Colors.red.shade700),
+      content: Text('USB audio failed — the stream is using the PHONE MICROPHONE.\n$message'),
+      actions: [
+        TextButton(
+          onPressed: () => showDiagnosticsDialog(context, widget.controller, onMessage: _showSnack),
+          child: const Text('Diagnostics'),
+        ),
+        TextButton(onPressed: messenger.hideCurrentMaterialBanner, child: const Text('Dismiss')),
+      ],
+    ));
+  }
+
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -173,6 +208,7 @@ class _CameraScreenState extends State<CameraScreen> {
   void dispose() {
     _scoreTimer?.cancel();
     _statusSub?.cancel();
+    _bannerMessenger?.clearMaterialBanners();
     widget.controller.previewBound.removeListener(_onPreviewBoundChanged);
     _demo.stop();
     _studio.scorebandWeight.removeListener(_onScorebandWeightChanged);
@@ -224,6 +260,27 @@ class _CameraScreenState extends State<CameraScreen> {
               top: MediaQuery.of(context).padding.top + (_streaming ? 16 : 72),
               left: 16,
               child: StreamHud(studio: _studio),
+            ),
+
+            // Audio source: config at start, then USB_AUDIO_* warnings (example chrome, not in the stream)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 20,
+              left: 0,
+              right: 0,
+              child: Center(child: AudioSourceChip(state: _audio)),
+            ),
+
+            // Native diagnostics log, readable mid-stream
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 72,
+              child: FloatingActionButton.small(
+                heroTag: 'diagnostics',
+                tooltip: 'Diagnostics',
+                onPressed: () => showDiagnosticsDialog(context, widget.controller, onMessage: _showSnack),
+                backgroundColor: Colors.black54,
+                child: const Icon(Icons.bug_report_outlined, color: Colors.white),
+              ),
             ),
 
             // Overlay Studio: scenarios, builder, active overlays, event log — usable before and during a stream

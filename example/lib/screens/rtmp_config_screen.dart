@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rtmp_broadcaster/flutter_rtmp_broadcaster.dart';
 import 'package:image_picker/image_picker.dart';
+import '../widgets/diagnostics_dialog.dart';
 import 'camera_screen.dart';
 
 class _SponsorItem {
@@ -86,6 +87,10 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
         if (_selectedUsbAudioDevice != null &&
             !audio.any((d) => d.deviceId == _selectedUsbAudioDevice!.deviceId)) {
           _selectedUsbAudioDevice = null;
+        }
+        // One USB input (e.g. an HDMI switcher): select it so the id is sent explicitly.
+        if (_selectedUsbAudioDevice == null && audio.length == 1) {
+          _selectedUsbAudioDevice = audio.single;
         }
       });
     } catch (_) {} finally {
@@ -365,41 +370,16 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
                       ),
               ),
             ),
+        if (_usbAudioDevices.isNotEmpty && _selectedUsbAudioDevice == null)
+          const Text(
+            'No device selected — the first USB audio input is used.',
+            style: TextStyle(fontSize: 12, color: Colors.orange),
+          ),
       ],
     );
   }
 
-  Future<void> _showDiagnostics() async {
-    final log = await _controller.exportDiagnostics();
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Diagnostics'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: SingleChildScrollView(
-            child: SelectableText(log, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: log));
-              Navigator.of(context).pop();
-              _showSnack('Copied to clipboard');
-            },
-            child: const Text('Copy'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showDiagnostics() => showDiagnosticsDialog(context, _controller, onMessage: _showSnack);
 
   @override
   Widget build(BuildContext context) {

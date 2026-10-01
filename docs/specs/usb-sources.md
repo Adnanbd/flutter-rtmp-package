@@ -61,7 +61,19 @@ camera opens, so the `AudioDeviceInfo` id picked by the app may be stale when au
 - `CameraStreamManager.installAudioSource` is used by `initPreviewOnly`, `configure` (fresh **and** reuse) and keeps the
   current source when it already matches; `"mic"` after USB swaps back to `MicrophoneSource`.
 - Every step logs to `DiagLogger` (tag `UsbAudioSource`): available inputs, chosen device + match kind, routed device.
-- PCM 16-bit read loop on a daemon thread; mute sends zeroed buffers; negative `read` → `USB_AUDIO_READ_FAILED` log.
+- PCM 16-bit read loop on a daemon thread; mute sends zeroed buffers; negative `read` → `USB_AUDIO_READ_FAILED` log;
+  `read == 0` sleeps 5 ms. Read chunk ≤ 4096 bytes, a multiple of 4: RootEncoder's `AudioEncoder` has
+  `max-input-size` 8192 and `BaseEncoder.processInput` silently cuts anything above the codec buffer.
+- Stall watchdog (ADR 0023, pure `AudioStallDetector`, main thread every 500 ms while recording): after a 1 s grace,
+  stalled = no PCM for ≥ 1.5 s or < 50 % of real-time bytes over 3 s. `CameraStreamManager.onUsbAudioStall`:
+  first stall → `USB_AUDIO_STALLED` + `UsbAudioSource.restartCapture()` (new `AudioRecord`, device re-resolved, same
+  encoder callback); another stall within 30 s or a failed restart → `MicrophoneSource` with `preferredDevice` =
+  built-in mic (Android may route the default input to the attached USB device), mute state kept,
+  `USB_AUDIO_FALLBACK_PHONE_MIC`. Fallback lasts until the next `initPreview`/`configure`.
+- Diagnostics while recording: `new: caps …` (USB input sample rates / channel counts / encodings), `pcm:` every 5 s
+  (`PcmStats`: bytes/s vs expected, reads, empty reads, max gap, peak/RMS dBFS, zero %), `mics[…]:` at first frame and
+  every 30 s (`AudioRecord.activeMicrophones` API 28 = physical mic and location; `activeRecordingConfigurations`
+  API 24, `silenced` API 29).
 
 ## Guards at `startStream`
 `USB_DEVICE_GONE` if the device detached; `USB_PERMISSION_REVOKED` if permission lost.
@@ -76,3 +88,6 @@ intent filter with `@xml/usb_device_filter` (see `example/android/app/src/main/A
 - `usbDetached` `deviceId` is not surfaced on `RtmpStatus`.
 - Permission flow fix (ADR 0021) not device-verified as of 2026-09-30.
 - USB audio routing fix (ADR 0022) not device-verified as of 2026-09-30.
+- MS2109-based capture (MT-VIKI switcher, shown as `USB-Audio - MS2109` on a Xiaomi 24129PN74G): with USB audio
+  selected YouTube showed nothing on 2026-10-01 while USB video + phone mic worked. Stall watchdog + fallback (ADR 0023)
+  not device-verified as of 2026-10-01.

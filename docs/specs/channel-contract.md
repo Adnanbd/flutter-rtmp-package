@@ -168,3 +168,5 @@ by the controller; **EventChannel** `error` event on `statusStream`. Some codes 
 | `STREAM_CONFIG_MISMATCH` | `configure` fps/keyframe differ from `initPreview` (can't change while previewing; initPreview values kept); extra keys `preparedFps`, `requestedFps`, `preparedKeyframe`, `requestedKeyframe` |
 | `USB_AUDIO_DEVICE_NOT_FOUND` | `audioInput: usb` but no USB audio input attached; recording from the default mic; extra key `requestedDeviceId` |
 | `USB_AUDIO_NOT_ROUTED` | Android routed the USB audio recording to another input (e.g. built-in mic); re-route requested; extra keys `routedDevice`, `routedType`, `requestedDeviceId` |
+| `USB_AUDIO_STALLED` | USB audio stopped delivering PCM while streaming (no data ≥ 1.5 s, or < 50 % of real-time over 3 s); USB capture restarted; extra key `reason` |
+| `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again within 30 s of a restart (or the restart failed); the stream now carries the built-in phone mic until the next `initPreview`/`configure`; extra key `reason` |
