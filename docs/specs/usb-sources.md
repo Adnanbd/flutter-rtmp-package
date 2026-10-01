@@ -44,6 +44,9 @@ Pass the same USB fields again in `configure`'s `StreamConfig`.
   stale pthread handle → SIGABRT in `prepare_preview`. `start()` lazily re-creates using cached size.
 - GL rotation differs from phone camera — see [orientation.md](orientation.md#gl-settings--uvc--usb-camera-uvcvideosource).
 - `switchCamera` is a no-op for UVC.
+- Minimum preview lifetime: `stop()`/`release()` wait until `startPreview()` is ≥ 500 ms old (`UvcTiming`, max 500 ms
+  on the main thread). Closing 17 ms after start crashed natively in libuvc (Xiaomi 24129PN74G + MS2109 switcher,
+  2026-10-01) when the host's platform view bound and unbound back to back. Not device-verified as of 2026-10-01.
 - Zoom: `ZoomableUvcCamera` (subclass exposing libuvc's `mZoomMin`/`mZoomMax`); `zoomLimits()`, `setZoomPercent()`,
   `zoomPercent()` feed `UvcZoomTarget`. Cameras without `CT_ZOOM_ABSOLUTE` report `supported: false`.
   See [camera-zoom.md](camera-zoom.md).

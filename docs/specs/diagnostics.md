@@ -25,6 +25,9 @@ Purpose: field debugging on release builds where logcat is unavailable or `Log.d
 - Never log the RTMP stream key or the full `rtmpEndpoint` (it contains the key). Log `EndpointRedactor.redact(endpoint)`
   (`scheme://host/app/***`) instead. The `startStream` line leaked it until 2026-09-30.
 - `emitWarn` in `CameraStreamManager` also writes the warning to the file.
+- On plugin attach (API 30+) `DiagLogger` logs why earlier processes of the app died (`ActivityManager.getHistoricalProcessExitReasons`),
+  newest 5 not yet logged: `EXIT | at=… reason=CRASH_NATIVE status=<signal> importance=… description=…`. Marker file
+  `rtmp_diag_exit.ts`. Native crashes leave no other line, so this is how they show up in an export.
 - Periodic summaries are the only allowed hot-path logging: `UsbAudioSource` `pcm:` (5 s) and `mics[periodic]:` (30 s)
   while USB audio records; `CameraStreamManager` `stream:` (5 s) while streaming: `sentVideo`, `sentAudio`,
   `droppedVideo`, `droppedAudio`, `bytesSent`, `cache`, `audioSrc` from `GenericStreamClient`. These show what

@@ -11,6 +11,7 @@ Fixed (2026-09-30, not device-verified):
 Fixed (2026-10-01, not device-verified):
 - Android USB audio: with an MS2109-based USB audio input (MT-VIKI switcher) YouTube received nothing, while USB video + phone mic worked. USB audio is now watched while streaming: if it stops delivering sound it is restarted once (warning `USB_AUDIO_STALLED`), and if it stalls again within 30 s the stream switches to the phone microphone (warning `USB_AUDIO_FALLBACK_PHONE_MIC`) instead of going blank. Read chunks are capped at 4096 bytes (the AAC encoder silently cut larger ones). New 5 s diagnostics lines `pcm:` and `stream:` and a `mics[…]:` line with the physical microphone in use. ADR 0023.
 - Example: Go Live screen shows the audio source (chip + red banner on fallback) and has a Diagnostics button.
+- Android: the app crashed natively when a USB camera was closed a few ms after its preview started (camera screen bound and unbound the preview back to back). The UVC close now waits until the preview is 500 ms old. Diagnostics now log why previous app processes died (`EXIT` lines, Android 11+).
 - Diagnostics log leaked the RTMP stream key (`startStream` line printed the full endpoint). Endpoints are now redacted to `scheme://host/app/***`.
 - Android USB permission: `requestUsbPermission` returned `false` without a system dialog on Android 12+ for any device not already granted (libuvc 3.2.0 `USBMonitor.register()` fails on targetSdk 31+). The plugin now runs its own permission request and detach receiver; `usbDetached` events are delivered again. ADR 0021.
 

@@ -39,7 +39,7 @@ kotlin/com/flutterrtmp/broadcaster/
 ├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource
 │                                     (+ pure UsbAudioRouting: USB input selection, ADR 0022;
 │                                     pure AudioStallDetector + PcmStats: stall watchdog and PCM telemetry, ADR 0023).
-└── diag/                             DiagLogger (file log + uncaught handler), EndpointRedactor (safe endpoint logging).
+└── diag/                             DiagLogger (file log, uncaught handler, previous-exit reasons), EndpointRedactor (safe endpoint logging).
 ```
 
 ## Pipeline call order (critical)

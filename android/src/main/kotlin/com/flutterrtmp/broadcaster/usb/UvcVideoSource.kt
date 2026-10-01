@@ -1,6 +1,7 @@
 package com.flutterrtmp.broadcaster.usb
 
 import android.graphics.SurfaceTexture
+import android.os.SystemClock
 import android.util.Log
 import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.pedro.encoder.input.sources.video.VideoSource
@@ -23,6 +24,8 @@ class UvcVideoSource(
     private var lastHeight: Int = 0
     private var lastFps: Int = 0
     private var lastRotation: Int = 0
+    /** elapsedRealtime of the last successful startPreview(); 0 = not started. */
+    private var startedAtMs = 0L
 
     override fun create(width: Int, height: Int, fps: Int, rotation: Int): Boolean {
         lastWidth = width
@@ -73,6 +76,7 @@ class UvcVideoSource(
         try {
             camera.setPreviewTexture(surfaceTexture)
             camera.startPreview()
+            startedAtMs = SystemClock.elapsedRealtime()
             running = true
             DiagLogger.log(TAG, "start: OK UVC preview started deviceId=$deviceId")
         } catch (e: Exception) {
@@ -95,6 +99,7 @@ class UvcVideoSource(
         uvcCamera = null
         running = false
         DiagLogger.log(TAG, "stop: closing UVC camera (deviceId=$deviceId)")
+        waitForLibuvc("stop")
         try { cam.stopPreview() } catch (_: Exception) {}
         try { cam.close() } catch (_: Exception) {}
         try { cam.destroy() } catch (_: Exception) {}
@@ -114,6 +119,7 @@ class UvcVideoSource(
         uvcCamera = null
         running = false
         DiagLogger.log(TAG, "release: closing UVC camera (deviceId=$deviceId)")
+        waitForLibuvc("release")
         try { cam.stopPreview() } catch (_: Exception) {}
         try { cam.close() } catch (_: Exception) {}
         try { cam.destroy() } catch (_: Exception) {}
@@ -122,6 +128,17 @@ class UvcVideoSource(
     }
 
     override fun isRunning(): Boolean = running
+
+    /** Closing within ms of startPreview() crashed natively (UvcTiming); give libuvc's capture thread time to start. */
+    private fun waitForLibuvc(where: String) {
+        val now = SystemClock.elapsedRealtime()
+        val waitMs = UvcTiming.waitBeforeCloseMs(startedAtMs, now)
+        if (waitMs > 0) {
+            DiagLogger.log(TAG, "$where: ${now - startedAtMs} ms after start — waiting $waitMs ms for libuvc")
+            try { Thread.sleep(waitMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
+        startedAtMs = 0L
+    }
 
     /**
      * Hardware zoom limits (`CT_ZOOM_ABSOLUTE` raw units), refreshed from the device; `min >= max` = no zoom control.
