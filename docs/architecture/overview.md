@@ -62,6 +62,6 @@ Details: [android.md](android.md) · [ios.md](ios.md) · contracts in [../specs/
 
 ## Defaults
 - Default config `youtube720Portrait`: 720×1280 @ 30 fps, 4 Mbps H.264, 2 s keyframe (1080p presets: 10 Mbps; [ADR 0019](../decisions/0019-youtube-preset-bitrates.md)).
-- Audio: AAC 128 kbps, 44.1 kHz stereo.
+- Audio: AAC 128 kbps, 48 kHz stereo; optional mic cleanup ([audio-cleanup.md](../specs/audio-cleanup.md)).
 - Reconnect: 3 attempts × 3 s.
 - Dynamic overlays: 16 max; weights sponsor 10, scoreband 50, dynamic 50.

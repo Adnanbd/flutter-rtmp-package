@@ -36,6 +36,8 @@ kotlin/com/flutterrtmp/broadcaster/
 │   ├── ChoreographerFrameDriver.kt   Per-vsync onFrame while animating, throttled to encoder fps.
 │   └── SponsorConfig.kt              Channel map → data class.
 ├── rtmp/RtmpConnectChecker.kt        ConnectChecker → EventChannel (main thread, 32-event buffer).
+├── audio/                            AudioCleanupChain (high-pass, hum notches, RNNoise, gate, AGC, limiter), HumProbe,
+│                                     RnnoiseNative (JNI → src/main/cpp/librnnoise_jni.so), CleanupAudioEffect (ADR 0025).
 ├── usb/                              UsbDeviceRegistry, UvcVideoSource (+ ZoomableUvcCamera), UsbAudioSource
 │                                     (+ pure UsbAudioRouting: USB input selection, ADR 0022;
 │                                     pure AudioStallDetector + PcmStats: stall watchdog and PCM telemetry, ADR 0023).
@@ -46,7 +48,7 @@ kotlin/com/flutterrtmp/broadcaster/
 
 ```
 prepareVideo(w, h, bitrate, fps, keyframe, 0)   ← arg order: bitrate BEFORE fps
-prepareAudio(44100, stereo=true, 128_000)
+prepareAudio(48000, stereo=true, 128_000)       ← 48 kHz for RNNoise / native USB rate (ADR 0025)
 applyStreamClientDefaults                        ← BitrateAdapter max + setReTries(3)
 [changeVideoSource(UVC) / changeAudioSource(USB)]
 configureGlForOrientation

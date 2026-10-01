@@ -2,6 +2,7 @@ package com.flutterrtmp.broadcaster
 
 import android.app.Activity
 import android.content.Context
+import com.flutterrtmp.broadcaster.audio.AudioCleanupMode
 import com.flutterrtmp.broadcaster.camera.CameraPreviewFactory
 import com.flutterrtmp.broadcaster.camera.CameraPreviewView
 import com.flutterrtmp.broadcaster.camera.CameraStreamManager
@@ -95,6 +96,7 @@ class FlutterRtmpBroadcasterPlugin :
             }
             "rebindPreview" -> handleRebindPreview(result)
             "setAudioMute" -> handleSetAudioMute(call, result)
+            "setAudioCleanup" -> handleSetAudioCleanup(call, result)
             "setAppOrientation" -> handleSetAppOrientation(call, result)
             "listUsbVideoDevices" -> handleListUsbVideoDevices(result)
             "listUsbAudioDevices" -> handleListUsbAudioDevices(result)
@@ -176,10 +178,15 @@ class FlutterRtmpBroadcasterPlugin :
         val usbVideoDeviceId = call.argument<Int>("usbVideoDeviceId")
         val audioInput = call.argument<String>("audioInput") ?: "mic"
         val usbAudioDeviceId = call.argument<Int>("usbAudioDeviceId")
+        val cleanupMode = audioCleanupArg(call) ?: run {
+            result.error("INVALID_ARGS", "audioCleanup must be off, basic or voice", null)
+            return
+        }
 
         cameraStreamManager?.release()
         try {
             cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
+                manager.setAudioCleanup(cleanupMode)
                 manager.initPreviewOnly(
                     width, height, fps, videoBitrate, keyframeIntervalSeconds, orientation, initialFacing,
                     videoInput, usbVideoDeviceId, audioInput, usbAudioDeviceId
@@ -217,6 +224,10 @@ class FlutterRtmpBroadcasterPlugin :
         val usbVideoDeviceId = call.argument<Int>("usbVideoDeviceId")
         val audioInput = call.argument<String>("audioInput") ?: "mic"
         val usbAudioDeviceId = call.argument<Int>("usbAudioDeviceId")
+        val cleanupMode = audioCleanupArg(call) ?: run {
+            result.error("INVALID_ARGS", "audioCleanup must be off, basic or voice", null)
+            return
+        }
 
         val act = activity
         if (act == null) {
@@ -229,6 +240,7 @@ class FlutterRtmpBroadcasterPlugin :
             // initPreview already set up the pipeline — just apply endpoint + sponsors
             DiagLogger.log("PLUGIN", "handleConfigure: reusing existing manager (previewReady=true)")
             try {
+                existing.setAudioCleanup(cleanupMode)
                 existing.configure(
                     rtmpEndpoint, sponsors,
                     width, height, fps, videoBitrate, keyframeIntervalSeconds,
@@ -248,6 +260,7 @@ class FlutterRtmpBroadcasterPlugin :
         DiagLogger.log("PLUGIN", "handleConfigure: fresh manager (no prior initPreview)")
         try {
             cameraStreamManager = CameraStreamManager(ctx, act, usbDeviceRegistry).also { manager ->
+                manager.setAudioCleanup(cleanupMode)
                 manager.configure(
                     rtmpEndpoint, sponsors,
                     width, height, fps, videoBitrate, keyframeIntervalSeconds,
@@ -366,6 +379,25 @@ class FlutterRtmpBroadcasterPlugin :
         cameraStreamManager?.switchCamera(facing)
         result.success(null)
     }
+
+    /** Live-safe; also applied from the `audioCleanup` arg of initPreview/configure (docs/specs/audio-cleanup.md). */
+    private fun handleSetAudioCleanup(call: MethodCall, result: Result) {
+        val raw = call.argument<String>("mode")
+        val mode = AudioCleanupMode.fromWire(raw) ?: run {
+            result.error("INVALID_ARGS", "mode must be off, basic or voice (got $raw)", null)
+            return
+        }
+        val manager = cameraStreamManager ?: run {
+            result.error("NOT_CONFIGURED", "call initPreview() or configure() before setAudioCleanup()", null)
+            return
+        }
+        manager.setAudioCleanup(mode)
+        result.success(null)
+    }
+
+    /** `audioCleanup` arg (absent = off); null when the value is unknown. */
+    private fun audioCleanupArg(call: MethodCall): AudioCleanupMode? =
+        AudioCleanupMode.fromWire(call.argument<String>("audioCleanup") ?: AudioCleanupMode.OFF.wire)
 
     private fun handleSetAudioMute(call: MethodCall, result: Result) {
         val muted = call.argument<Boolean>("muted") ?: false

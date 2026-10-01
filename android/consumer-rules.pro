@@ -18,3 +18,6 @@
 # UVCCamera subclass used for zoom: libUVCCamera.so reads/writes inherited fields (mNativePtr, mZoomMin, …) on
 # this object via JNI, so the class itself must not be renamed or merged.
 -keep class com.flutterrtmp.broadcaster.usb.ZoomableUvcCamera { *; }
+
+# RNNoise JNI bridge: librnnoise_jni.so binds Java_com_flutterrtmp_broadcaster_audio_RnnoiseNative_* by name.
+-keep class com.flutterrtmp.broadcaster.audio.RnnoiseNative { *; }

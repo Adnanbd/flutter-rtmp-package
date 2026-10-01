@@ -180,6 +180,17 @@ class RtmpBroadcastController {
     }
   }
 
+  /// Changes the mic cleanup while previewing or live (Android). Takes effect
+  /// within one audio chunk (~20 ms) on the USB and the phone mic.
+  ///
+  /// [AudioCleanup.voice] falls back to [AudioCleanup.basic] with warning
+  /// `AUDIO_CLEANUP_UNAVAILABLE` if RNNoise can't run, and with
+  /// `AUDIO_CLEANUP_OVERLOAD` if the phone is too slow for it.
+  ///
+  /// Throws `NOT_CONFIGURED` before [initPreview] / [configure].
+  Future<void> setAudioCleanup(AudioCleanup mode) =>
+      _guard(() => _method.setAudioCleanup(mode.name));
+
   Future<void> updateSponsors(List<SponsorOverlay> sponsors) async {
     try {
       await _method.updateSponsors(

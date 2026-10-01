@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.annotation.RequiresApi
+import com.flutterrtmp.broadcaster.audio.AudioCleanupChain
 import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.pedro.encoder.Frame
 import com.pedro.encoder.input.audio.GetMicrophoneData
@@ -35,7 +36,9 @@ class UsbAudioSource(
     private val context: Context,
     usbAudioDeviceId: Int?,
     private val onIssue: (code: String, message: String, details: Map<String, Any?>) -> Unit = { _, _, _ -> },
-    private val onStall: (source: UsbAudioSource, reason: String) -> Unit = { _, _ -> }
+    private val onStall: (source: UsbAudioSource, reason: String) -> Unit = { _, _ -> },
+    /** Hum/noise cleanup run on each read, after the raw `pcm:` stats (docs/specs/audio-cleanup.md). */
+    private val cleanup: AudioCleanupChain? = null
 ) : AudioSource() {
 
     companion object {
@@ -81,6 +84,15 @@ class UsbAudioSource(
     private val watchdog = object : Runnable {
         override fun run() {
             if (!running) return
+            try {
+                tick()
+            } catch (t: Throwable) {
+                DiagLogger.logError("USB_AUDIO_STALLED", "watchdog tick failed: ${t.message}", t)
+                if (running) mainHandler.postDelayed(this, WATCH_INTERVAL_MS)
+            }
+        }
+
+        private fun tick() {
             val now = SystemClock.elapsedRealtime()
             val expected = expectedBytesPerSec()
             if (now - lastPcmLogAt >= PCM_LOG_INTERVAL_MS) {
@@ -190,35 +202,42 @@ class UsbAudioSource(
         mainHandler.postDelayed(watchdog, WATCH_INTERVAL_MS)
 
         readThread = Thread({
-            val buffer = ByteArray(readBufferBytes)
-            var firstFrame = true
-            while (running && mySession == session) {
-                // Same clock and moment as RootEncoder's MicrophoneManager: the encoders start at
-                // elapsedRealtimeNanos (CLOCK_BOOTTIME). System.nanoTime() lags it by all deep sleep since boot,
-                // which made every USB audio PTS clamp to 0 and YouTube unable to play the stream (ADR 0024).
-                val frameTimeUs = frameClockUs()
-                val read = record.read(buffer, 0, buffer.size)
-                if (mySession != session) break
-                stats.onRead(buffer, read, SystemClock.elapsedRealtime())
-                if (read > 0) {
-                    detector.onBytes(read)
-                    if (firstFrame) {
-                        firstFrame = false
-                        // routedDevice is reliable once audio flows.
-                        mainHandler.post { verifyRoute("firstFrame"); logActiveMics("firstFrame") }
+            // Any throwable ends this session's loop instead of killing the app; the stall watchdog then restarts
+            // USB capture or falls back to the phone mic (ADR 0023).
+            try {
+                val buffer = ByteArray(readBufferBytes)
+                var firstFrame = true
+                while (running && mySession == session) {
+                    // Same clock and moment as RootEncoder's MicrophoneManager: the encoders start at
+                    // elapsedRealtimeNanos (CLOCK_BOOTTIME). System.nanoTime() lags it by all deep sleep since boot,
+                    // which made every USB audio PTS clamp to 0 and YouTube unable to play the stream (ADR 0024).
+                    val frameTimeUs = frameClockUs()
+                    val read = record.read(buffer, 0, buffer.size)
+                    if (mySession != session) break
+                    stats.onRead(buffer, read, SystemClock.elapsedRealtime())
+                    if (read > 0) {
+                        detector.onBytes(read)
+                        if (firstFrame) {
+                            firstFrame = false
+                            // routedDevice is reliable once audio flows.
+                            mainHandler.post { verifyRoute("firstFrame"); logActiveMics("firstFrame") }
+                        }
+                        if (!muted) cleanup?.process(buffer, read)
+                        val frame = if (muted) {
+                            Frame(ByteArray(read), 0, read, frameTimeUs)
+                        } else {
+                            Frame(buffer.copyOf(read), 0, read, frameTimeUs)
+                        }
+                        getMicrophoneData.inputPCMData(frame)
+                    } else if (read < 0 && running) {
+                        DiagLogger.logError("USB_AUDIO_READ_FAILED", "AudioRecord.read returned $read")
+                        break
+                    } else if (read == 0) {
+                        try { Thread.sleep(5) } catch (_: InterruptedException) { break }
                     }
-                    val frame = if (muted) {
-                        Frame(ByteArray(read), 0, read, frameTimeUs)
-                    } else {
-                        Frame(buffer.copyOf(read), 0, read, frameTimeUs)
-                    }
-                    getMicrophoneData.inputPCMData(frame)
-                } else if (read < 0 && running) {
-                    DiagLogger.logError("USB_AUDIO_READ_FAILED", "AudioRecord.read returned $read")
-                    break
-                } else if (read == 0) {
-                    try { Thread.sleep(5) } catch (_: InterruptedException) { break }
                 }
+            } catch (t: Throwable) {
+                DiagLogger.logError("USB_AUDIO_READ_FAILED", "read loop stopped: ${t.message}", t)
             }
         }, "UsbAudioSource").also { it.isDaemon = true }
         readThread?.start()

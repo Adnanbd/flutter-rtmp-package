@@ -7,6 +7,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
+import com.flutterrtmp.broadcaster.audio.AudioCleanupChain
+import com.flutterrtmp.broadcaster.audio.AudioCleanupMode
+import com.flutterrtmp.broadcaster.audio.CleanupAudioEffect
+import com.flutterrtmp.broadcaster.audio.RnnoiseDenoiser
+import com.flutterrtmp.broadcaster.audio.RnnoiseNative
 import com.flutterrtmp.broadcaster.diag.DiagLogger
 import com.flutterrtmp.broadcaster.diag.EndpointRedactor
 import com.flutterrtmp.broadcaster.overlay.ChoreographerFrameDriver
@@ -40,7 +45,10 @@ class CameraStreamManager(
         private const val DEFAULT_FPS = 30
         private const val DEFAULT_BITRATE = 4_000_000
         private const val DEFAULT_KEYFRAME = 2
-        private const val AUDIO_SAMPLE_RATE = 44100
+        /** 48 kHz: the MS2109/most USB audio is natively 48 kHz and RNNoise requires it (ADR 0025). */
+        private const val AUDIO_SAMPLE_RATE = 48_000
+        private const val AUDIO_CHANNELS = 2
+        private const val FALLBACK_SAMPLE_RATE = 44_100
         private const val AUDIO_BITRATE = 128_000
         private const val MAX_RECONNECT_ATTEMPTS = 3
         private const val RECONNECT_DELAY_MS = 3000L
@@ -161,7 +169,7 @@ class CameraStreamManager(
         preparedKeyframe = keyframeIntervalSeconds
         pendingBitrate = null
         val videoOk = genericStream.prepareVideo(width, height, videoBitrate, fps, keyframeIntervalSeconds, 0)
-        val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+        val audioOk = prepareAudioWithFallback()
         if (!videoOk || !audioOk) {
             Log.e(TAG, "initPreviewOnly prepare failed: video=$videoOk audio=$audioOk")
             throw IllegalStateException("Preview prepare failed (video=$videoOk, audio=$audioOk)")
@@ -219,7 +227,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             preparedKeyframe = keyframeIntervalSeconds
             pendingBitrate = null
             val videoOk = genericStream.prepareVideo(width, height, videoBitrate, fps, keyframeIntervalSeconds, 0)
-            val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+            val audioOk = prepareAudioWithFallback()
             if (!videoOk || !audioOk) {
                 Log.e(TAG, "configure prepare failed: video=$videoOk audio=$audioOk")
                 throw IllegalStateException("Configure failed (video=$videoOk, audio=$audioOk)")
@@ -298,7 +306,8 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
                 val usbAudio = UsbAudioSource(
                     context, usbAudioDeviceId,
                     onIssue = { code, message, details -> mainHandler.post { emitWarn(code, message, details) } },
-                    onStall = { src, reason -> onUsbAudioStall(src, reason) }
+                    onStall = { src, reason -> onUsbAudioStall(src, reason) },
+                    cleanup = audioCleanup
                 )
                 usbRestartAt = 0L
                 genericStream.changeAudioSource(usbAudio)
@@ -306,12 +315,67 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             }
             else -> {
                 if (current !is UsbAudioSource) {
+                    (current as? MicrophoneSource)?.let { attachCleanup(it) }
                     DiagLogger.log(TAG, "$where: audio=${audioSourceForLog()} (requested $audioInput)")
                     return
                 }
-                genericStream.changeAudioSource(MicrophoneSource())
+                genericStream.changeAudioSource(MicrophoneSource().also { attachCleanup(it) })
                 DiagLogger.log(TAG, "$where: audio USB -> phone mic (requested $audioInput)")
             }
+        }
+    }
+
+    /**
+     * Mic cleanup shared by every audio source this manager installs (docs/specs/audio-cleanup.md, ADR 0025):
+     * run directly by [UsbAudioSource], and as RootEncoder's `CustomAudioEffect` on the phone mic.
+     */
+    private val audioCleanup = AudioCleanupChain(
+        sampleRate = AUDIO_SAMPLE_RATE,
+        channels = AUDIO_CHANNELS,
+        denoiserFactory = if (runCatching { RnnoiseNative.available }.getOrDefault(false)) ({ RnnoiseDenoiser() }) else null,
+        onOverload = { msg -> mainHandler.post { emitWarn("AUDIO_CLEANUP_OVERLOAD", msg) } },
+        onUnavailable = { msg -> mainHandler.post { emitWarn("AUDIO_CLEANUP_UNAVAILABLE", "$msg; using basic cleanup") } },
+        onFailure = { t ->
+            DiagLogger.logError("AUDIO_CLEANUP_FAILED", "cleanup disabled, raw audio continues", t)
+            mainHandler.post {
+                emitWarn("AUDIO_CLEANUP_FAILED", "Mic cleanup hit an error and was turned off; the stream continues with raw audio. ${t.message ?: ""}")
+            }
+        }
+    )
+
+    /**
+     * Prepares 48 kHz stereo audio; a device that can't record 48 kHz gets 44.1 kHz (the previous default) so the
+     * stream still starts. Cleanup follows the rate (VOICE needs 48 kHz → BASIC + AUDIO_CLEANUP_UNAVAILABLE).
+     */
+    private fun prepareAudioWithFallback(): Boolean {
+        val ok48 = try {
+            genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+        } catch (t: Throwable) {
+            DiagLogger.log(TAG, "prepareAudio(48000) threw: ${t.message}")
+            false
+        }
+        if (ok48) {
+            audioCleanup.updateSampleRate(AUDIO_SAMPLE_RATE)
+            return true
+        }
+        DiagLogger.log(TAG, "prepareAudio: 48000 Hz not supported, falling back to $FALLBACK_SAMPLE_RATE Hz")
+        val ok = genericStream.prepareAudio(FALLBACK_SAMPLE_RATE, true, AUDIO_BITRATE)
+        if (ok) audioCleanup.updateSampleRate(FALLBACK_SAMPLE_RATE)
+        return ok
+    }
+
+    /** Live-safe: the chain picks the new mode at its next audio chunk. */
+    fun setAudioCleanup(mode: AudioCleanupMode) {
+        if (audioCleanup.mode != mode) DiagLogger.log(TAG, "audioCleanup: ${audioCleanup.mode.wire} -> ${mode.wire}")
+        audioCleanup.resetFailure()
+        audioCleanup.mode = mode
+    }
+
+    private fun attachCleanup(mic: MicrophoneSource) {
+        try {
+            mic.setAudioEffect(CleanupAudioEffect(audioCleanup))
+        } catch (t: Throwable) {
+            DiagLogger.logError("AUDIO_CLEANUP_FAILED", "setAudioEffect on phone mic failed; raw audio", t)
         }
     }
 
@@ -344,7 +408,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
     }
 
     private fun fallbackToPhoneMic(src: UsbAudioSource, reason: String) {
-        val mic = MicrophoneSource()
+        val mic = MicrophoneSource().also { attachCleanup(it) }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             // Android may route the default input to an attached USB device; ask for the built-in mic explicitly.
             val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
@@ -375,6 +439,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             if (!genericStream.isStreaming) return
             try {
                 val c = genericStream.getStreamClient()
+                DiagLogger.log(TAG, "cleanup: ${audioCleanup.summarize(STREAM_STATS_INTERVAL_MS)}")
                 DiagLogger.log(TAG, "stream: sentVideo=${c.getSentVideoFrames()} sentAudio=${c.getSentAudioFrames()} " +
                     "droppedVideo=${c.getDroppedVideoFrames()} droppedAudio=${c.getDroppedAudioFrames()} " +
                     "bytesSent=${c.getBytesSend()} cache=${c.getItemsInCache()} audioSrc=${audioSourceForLog()}")
@@ -738,7 +803,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
             currentFps = 30
             val bitrate = pendingBitrate ?: preparedBitrate
             val videoOk = genericStream.prepareVideo(newWidth, newHeight, bitrate, currentFps, preparedKeyframe, 0)
-            val audioOk = genericStream.prepareAudio(AUDIO_SAMPLE_RATE, true, AUDIO_BITRATE)
+            val audioOk = prepareAudioWithFallback()
             if (!videoOk || !audioOk) {
                 Log.e(TAG, "reinitialize prepare failed: video=$videoOk audio=$audioOk")
                 return
@@ -782,6 +847,7 @@ if (videoInput == "usb" && usbVideoDeviceId != null && usbDeviceRegistry != null
         dynamicOverlays.setLive(false)
         dynamicOverlays.attachHost(null)
         mainHandler.removeCallbacks(streamStatsLogger)
+        try { audioCleanup.release() } catch (t: Throwable) { DiagLogger.log(TAG, "audioCleanup.release failed", t) }
         zoom.release()
         if (isPreviewReady) overlayFilterManager?.release(genericStream)
         if (genericStream.isOnPreview) genericStream.stopPreview()

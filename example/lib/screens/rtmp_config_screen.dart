@@ -32,6 +32,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
   VideoOrientation _selectedOrient = VideoOrientation.portrait;
   VideoInput _selectedVideoInput = VideoInput.device;
   AudioInput _selectedAudioInput = AudioInput.mic;
+  AudioCleanup _audioCleanup = AudioCleanup.voice;
 
   final List<_SponsorItem> _sponsors = [];
   final _picker = ImagePicker();
@@ -67,6 +68,7 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
       initialFacing: base.initialFacing,
       videoInput: _selectedVideoInput,
       audioInput: _selectedAudioInput,
+      audioCleanup: _audioCleanup,
       usbVideoDeviceId: _selectedUsbVideoDevice?.deviceId,
       usbAudioDeviceId: _selectedUsbAudioDevice?.deviceId,
     );
@@ -484,6 +486,14 @@ class _RtmpConfigScreenState extends State<RtmpConfigScreen> {
               if (v != null) setState(() => _selectedAudioInput = v);
             }),
             _buildUsbAudioSection(),
+            const SizedBox(height: 12),
+            _buildDropdownRow('Mic Cleanup', [
+              DropdownMenuItem(value: AudioCleanup.off, child: const Text('Off (raw)')),
+              DropdownMenuItem(value: AudioCleanup.basic, child: const Text('Basic (hum filter, gate, gain)')),
+              DropdownMenuItem(value: AudioCleanup.voice, child: const Text('Voice (+ RNNoise)')),
+            ], _audioCleanup, (v) {
+              if (v != null) setState(() => _audioCleanup = v);
+            }),
             const SizedBox(height: 28),
             Row(
               children: [

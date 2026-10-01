@@ -8,6 +8,21 @@ enum VideoInput { device, usb }
 
 enum AudioInput { mic, usb }
 
+/// Mic cleanup applied natively before encoding (Android; docs/specs/audio-cleanup.md).
+///
+/// Works on the USB and the phone mic. Change it live with
+/// `RtmpBroadcastController.setAudioCleanup`.
+enum AudioCleanup {
+  /// Raw mic audio.
+  off,
+
+  /// High-pass 80 Hz, 50/100/150 Hz hum notches, noise gate, automatic gain and limiter.
+  basic,
+
+  /// [basic] plus RNNoise speech denoising (removes hiss/static). Adds 10 ms of audio delay.
+  voice,
+}
+
 class StreamConfig {
   const StreamConfig({
     required this.width,
@@ -21,6 +36,7 @@ class StreamConfig {
     this.audioInput = AudioInput.mic,
     this.usbVideoDeviceId,
     this.usbAudioDeviceId,
+    this.audioCleanup = AudioCleanup.off,
   });
 
   final int width;
@@ -34,6 +50,9 @@ class StreamConfig {
   final AudioInput audioInput;
   final int? usbVideoDeviceId;
   final int? usbAudioDeviceId;
+
+  /// Mic cleanup from the start of the preview. Defaults to [AudioCleanup.off].
+  final AudioCleanup audioCleanup;
 
   static const StreamConfig youtube720Landscape = StreamConfig(
     width: 1280,
@@ -89,5 +108,6 @@ class StreamConfig {
         'audioInput': audioInput.name,
         if (usbVideoDeviceId != null) 'usbVideoDeviceId': usbVideoDeviceId,
         if (usbAudioDeviceId != null) 'usbAudioDeviceId': usbAudioDeviceId,
+        if (audioCleanup != AudioCleanup.off) 'audioCleanup': audioCleanup.name,
       };
 }

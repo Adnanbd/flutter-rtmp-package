@@ -19,6 +19,7 @@ Start with the root [CLAUDE.md](../CLAUDE.md) (agent boot) or [README.md](../REA
 | Portrait/landscape or GL rotation | [specs/orientation.md](specs/orientation.md) → skill `orientation-change` |
 | Dynamic overlays (M11, in progress) | [plans/dynamic-overlays.md](plans/dynamic-overlays.md) (resume box) → [specs/dynamic-overlays.md](specs/dynamic-overlays.md) |
 | Sponsor carousel / camera zoom (M12/M13, in progress) | [plans/carousel-and-zoom.md](plans/carousel-and-zoom.md) (resume box) → [specs/dynamic-overlays.md §12](specs/dynamic-overlays.md#12-carousel-content), [specs/camera-zoom.md](specs/camera-zoom.md) |
+| Mic hum / static cleanup (RNNoise chain, `setAudioCleanup`) | [specs/audio-cleanup.md](specs/audio-cleanup.md), [ADR 0025](decisions/0025-audio-cleanup.md) |
 | Reconnect or bitrate behavior | [specs/reconnect-and-bitrate.md](specs/reconnect-and-bitrate.md) |
 | USB camera or mic | [specs/usb-sources.md](specs/usb-sources.md) |
 | Field bug from a release build | [specs/diagnostics.md](specs/diagnostics.md) |

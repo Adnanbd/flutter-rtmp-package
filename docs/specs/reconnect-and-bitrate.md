@@ -38,7 +38,7 @@ Trigger: `onConnectionFailed(reason)` or `onDisconnect()` → `disconnected` eve
 - Presets follow YouTube's recommended H.264 bitrates (YouTube Help "Choose live encoder settings", checked 2026-09-15):
   720p30 4 Mbps, 1080p30 10 Mbps; keyframe 2 s. Before 2026-09-15 the configured bitrate was ignored after
   `initPreview` (stream stuck at 2.5 Mbps; YouTube warned it was below the recommendation).
-- Audio fixed at 128 kbps AAC, 44.1 kHz stereo.
+- Audio fixed at 128 kbps AAC, 48 kHz stereo.
 - Rationale: field report showed ~2 min of `RtmpSender: Video/Audio frame discarded` then `Broken pipe`
   when uplink fell below a fixed 2.5 Mbps.
 

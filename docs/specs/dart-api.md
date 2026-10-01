@@ -40,6 +40,7 @@ dimensions differ from `initPreview`'s, native releases and re-prepares the enco
 | `setZoom(double level) → ZoomInfo` | `setZoom` | Android only; clamped; validates in Dart (`ZOOM_INVALID`); rules [camera-zoom.md](camera-zoom.md) |
 | `rebindPreview()` | `rebindPreview` | cheap recovery after background/foreground |
 | `setAudioMuted(bool)` | `setAudioMute` | note name mismatch Dart vs channel |
+| `setAudioCleanup(AudioCleanup)` | `setAudioCleanup` | Android only; live-safe; [audio-cleanup.md](audio-cleanup.md) |
 | `updateSponsors(List<SponsorOverlay>)` | `updateSponsors` | ⛔ Android returns notImplemented → throws |
 | `setAppOrientation(VideoOrientation)` | `setAppOrientation` | locks activity orientation and re-prepares if dims flip |
 | `listUsbVideoDevices()` / `listUsbAudioDevices()` | same | uses `invokeListMethod` |
@@ -66,7 +67,8 @@ No UI chrome allowed — transparent preview only.
 
 ### `StreamConfig`
 Fields: `width, height, fps, videoBitrate (bps), keyframeIntervalSeconds, orientation, initialFacing,
-videoInput = device, audioInput = mic, usbVideoDeviceId?, usbAudioDeviceId?`.
+videoInput = device, audioInput = mic, usbVideoDeviceId?, usbAudioDeviceId?, audioCleanup = off`.
+`enum AudioCleanup { off, basic, voice }` (wire = enum name; `off` omitted).
 
 | Preset | Dims | Bitrate |
 |---|---|---|

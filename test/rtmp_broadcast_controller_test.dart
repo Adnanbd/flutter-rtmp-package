@@ -110,4 +110,47 @@ void main() {
       expect(s['height'], 100);
     });
   });
+
+  group('audio cleanup', () {
+    test('StreamConfig omits audioCleanup when off', () {
+      expect(StreamConfig.youtube720Landscape.toMap().containsKey('audioCleanup'), isFalse);
+    });
+
+    test('initPreview sends audioCleanup', () async {
+      final ctrl = RtmpBroadcastController();
+      const cfg = StreamConfig(
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        videoBitrate: 10000000,
+        keyframeIntervalSeconds: 2,
+        orientation: VideoOrientation.landscape,
+        initialFacing: CameraFacing.back,
+        audioInput: AudioInput.usb,
+        audioCleanup: AudioCleanup.voice,
+      );
+      await ctrl.initPreview(config: cfg);
+      expect(calls.last.method, 'initPreview');
+      expect((calls.last.arguments as Map)['audioCleanup'], 'voice');
+    });
+
+    test('setAudioCleanup sends the mode', () async {
+      final ctrl = RtmpBroadcastController();
+      await ctrl.setAudioCleanup(AudioCleanup.basic);
+      expect(calls.last.method, 'setAudioCleanup');
+      expect(calls.last.arguments, {'mode': 'basic'});
+    });
+
+    test('setAudioCleanup maps native errors', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('flutter_rtmp_broadcaster/control'),
+        (call) async => throw PlatformException(code: 'NOT_CONFIGURED', message: 'no manager'),
+      );
+      final ctrl = RtmpBroadcastController();
+      expect(
+        () => ctrl.setAudioCleanup(AudioCleanup.voice),
+        throwsA(isA<RtmpBroadcasterException>().having((e) => e.code, 'code', 'NOT_CONFIGURED')),
+      );
+    });
+  });
 }

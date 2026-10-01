@@ -8,6 +8,10 @@ Fixed (2026-09-30, not device-verified):
 - Android USB audio: with a USB audio input selected, the stream could carry the phone microphone with no warning. `UsbAudioSource` now resolves the USB input again right before recording (id → product name → first USB input), checks the actual route, re-routes on change, and sends new warnings `USB_AUDIO_DEVICE_NOT_FOUND` / `USB_AUDIO_NOT_ROUTED`. `configure()` after `initPreview()` now applies a changed audio input. ADR 0022.
 - Android USB audio crashed on Android 5.x (API 21/22): the read loop called API 23 `AudioRecord.bufferSizeInFrames`.
 
+Added (2026-10-01, not device-verified):
+- Android mic noise cleanup: `StreamConfig.audioCleanup` and `RtmpBroadcastController.setAudioCleanup(AudioCleanup.off | basic | voice)` (live-safe). `voice` runs high-pass, 50/100/150 Hz hum notches, RNNoise, noise gate, auto gain and limiter on the USB and phone mic. New warnings `AUDIO_CLEANUP_UNAVAILABLE`, `AUDIO_CLEANUP_OVERLOAD`. Bundles RNNoise 0.2 (BSD-3) as a native library (~1.4 MB per ABI); the package now needs the NDK. ADR 0025.
+- **Changed:** stream audio is now AAC 48 kHz (was 44.1 kHz; still used if a device can't record 48 kHz). Cleanup errors never crash: they turn cleanup off with warning `AUDIO_CLEANUP_FAILED`.
+
 Fixed (2026-10-01, not device-verified):
 - Android USB audio: with an MS2109-based USB audio input (MT-VIKI switcher) YouTube received nothing, while USB video + phone mic worked. USB audio is now watched while streaming: if it stops delivering sound it is restarted once (warning `USB_AUDIO_STALLED`), and if it stalls again within 30 s the stream switches to the phone microphone (warning `USB_AUDIO_FALLBACK_PHONE_MIC`) instead of going blank. Read chunks are capped at 4096 bytes (the AAC encoder silently cut larger ones). New 5 s diagnostics lines `pcm:` and `stream:` and a `mics[…]:` line with the physical microphone in use. ADR 0023.
 - Example: Go Live screen shows the audio source (chip + red banner on fallback) and has a Diagnostics button.

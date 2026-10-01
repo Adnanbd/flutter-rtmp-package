@@ -49,6 +49,14 @@ android {
         consumerProguardFiles 'consumer-rules.pro'
     }
 
+    // RNNoise for audio cleanup (docs/specs/audio-cleanup.md). Uses the app's NDK (Flutter's ndkVersion).
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
     testOptions {
         unitTests.all {
             useJUnitPlatform()

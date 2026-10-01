@@ -415,7 +415,7 @@ class _StreamScreenState extends State<StreamScreen> {
 | `StreamConfig.youtube1080Landscape` | 1920×1080 | 30 | 10 Mbps | 2 s | landscape |
 
 Bitrates follow YouTube's recommended H.264 settings. All presets start with the back camera. Audio is always AAC,
-44.1 kHz stereo, 128 kbps.
+48 kHz stereo, 128 kbps.
 
 ### Custom config
 
@@ -1261,6 +1261,7 @@ Failures are logged with their error code (`ERROR/<CODE>`). The stream key is ne
 | `getZoom()` | `Future<ZoomInfo>` | Current zoom state. | `ZOOM_NOT_READY`, `ZOOM_OPERATION_FAILED` |
 | `setZoom(double level)` | `Future<ZoomInfo>` | Zooms to a ratio, clamped to `min`–`max`; returns the applied state. Safe on every pinch update. | `ZOOM_INVALID`, `ZOOM_NOT_READY`, `ZOOM_UNSUPPORTED`, `ZOOM_OPERATION_FAILED` |
 | `setAudioMuted(bool muted)` | `Future<void>` | Mutes/unmutes the microphone. Live-safe. | — |
+| `setAudioCleanup(AudioCleanup mode)` | `Future<void>` | Mic hum/noise cleanup `off` · `basic` · `voice` (Android). Live-safe. | `NOT_CONFIGURED` |
 | `setAppOrientation(VideoOrientation orientation)` | `Future<void>` | Locks the app orientation and re-prepares the encoder if the frame flips. Not while live. | — |
 | `rebindPreview()` | `Future<void>` | Re-attaches the preview to the on-screen view without re-initializing. | `NO_MANAGER`, `NO_PREVIEW_VIEW`, `SURFACE_UNAVAILABLE`, `REBIND_PREVIEW_ERROR` |
 | `addOverlay(DynamicOverlay overlay)` | `Future<void>` | Adds a dynamic overlay and plays `enter`. | `OVERLAY_ID_EXISTS`, `OVERLAY_ID_RESERVED`, `OVERLAY_LIMIT_REACHED`, `OVERLAY_INVALID_CONTENT`, `OVERLAY_INVALID_PLACEMENT`, `OVERLAY_DECODE_FAILED`, `OVERLAY_GIF_TOO_LARGE`, `OVERLAY_CAROUSEL_TOO_LARGE`, `OVERLAY_FONT_INVALID`, `OVERLAY_NOT_INITIALIZED`, `OVERLAY_OPERATION_FAILED` |
@@ -1308,6 +1309,7 @@ currently unused. One instance at a time.
 | `audioInput` | `AudioInput` | `mic` | `mic` · `usb` |
 | `usbVideoDeviceId` | `int?` | `null` | from `UsbDeviceInfo.deviceId` |
 | `usbAudioDeviceId` | `int?` | `null` | from `UsbAudioDeviceInfo.deviceId` |
+| `audioCleanup` | `AudioCleanup` | `off` | `off` · `basic` · `voice` (see Mic noise cleanup) |
 
 Static presets: `youtube720Portrait`, `youtube1080Portrait`, `youtube720Landscape`, `youtube1080Landscape`,
 `defaultConfig` (= `youtube720Portrait`). Method: `toMap()`.
@@ -1566,11 +1568,35 @@ Sent as `warning` events (`RtmpStatus.errorCode`). The stream keeps running.
 | `USB_AUDIO_DEVICE_NOT_FOUND` | `AudioInput.usb` selected but no USB audio input is attached; the phone microphone is used |
 | `USB_AUDIO_NOT_ROUTED` | Android recorded from another input (e.g. phone mic) instead of the USB input; the plugin asked to re-route |
 | `USB_AUDIO_STALLED` | The USB audio input stopped delivering sound during the stream; the plugin restarted it |
+| `AUDIO_CLEANUP_UNAVAILABLE` | `voice` cleanup couldn't run RNNoise on this device; `basic` cleanup is used |
+| `AUDIO_CLEANUP_FAILED` | Mic cleanup hit an unexpected error and turned itself off; the stream continues with raw audio |
+| `AUDIO_CLEANUP_OVERLOAD` | The phone was too slow for `voice` cleanup; switched to `basic` |
 | `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again after the restart; **the stream now uses the phone microphone**. Show this to the user; restart the stream to try USB again |
 
 Full wire contract: [docs/specs/channel-contract.md](docs/specs/channel-contract.md).
 
 ---
+
+## Mic noise cleanup
+
+Android only. Removes mains hum ("earthing" buzz), rumble, hiss and static from the USB or phone mic before encoding,
+using the chain streamers use in OBS: high-pass 80 Hz → 50/100/150 Hz hum notches → RNNoise → noise gate →
+automatic gain → limiter.
+
+```dart
+await controller.initPreview(config: StreamConfig(/* … */ audioCleanup: AudioCleanup.voice));
+await controller.setAudioCleanup(AudioCleanup.off);   // live A/B while streaming
+```
+
+| Mode | What it does | Cost |
+|---|---|---|
+| `off` (default) | Raw mic | — |
+| `basic` | High-pass, hum notches, gate, gain, limiter | tiny CPU |
+| `voice` | `basic` + RNNoise speech denoiser | ~1.4 MB native library per CPU type, 10 ms audio delay |
+
+`voice` falls back to `basic` with warning `AUDIO_CLEANUP_UNAVAILABLE` / `AUDIO_CLEANUP_OVERLOAD`. Diagnostics log a
+`cleanup:` line every 5 s while live (levels, gate, gain, CPU, and `noise: humNN=…` to tell hum from hiss).
+Not device-verified as of 2026-10-01. Details: [docs/specs/audio-cleanup.md](docs/specs/audio-cleanup.md).
 
 ## Limits
 
@@ -1703,3 +1729,5 @@ flutter analyze lib test && flutter test
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Bundles [RNNoise](https://github.com/xiph/rnnoise) 0.2 (BSD-3-Clause, `android/src/main/cpp/rnnoise/COPYING`) for mic cleanup.

@@ -11,6 +11,7 @@ import '../overlay_studio/overlay_studio_sheet.dart';
 import '../overlay_studio/stream_hud.dart';
 import '../overlay_studio/studio_scenarios.dart';
 import '../overlay_studio/widget_capture.dart';
+import '../widgets/audio_cleanup_button.dart';
 import '../widgets/audio_source_chip.dart';
 import '../widgets/camera_controls_bar.dart';
 import '../widgets/diagnostics_dialog.dart';
@@ -44,6 +45,7 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _previewBound = false;
   bool _scorebandPushed = false;
   late AudioSourceState _audio;
+  late AudioCleanup _cleanup;
   ScaffoldMessengerState? _bannerMessenger;
 
   late final OverlayStudio _studio;
@@ -72,6 +74,7 @@ class _CameraScreenState extends State<CameraScreen> {
     widget.controller.previewBound.addListener(_onPreviewBoundChanged);
     _previewBound = widget.controller.previewBound.value;
     _audio = widget.controller.config.audioInput == AudioInput.usb ? AudioSourceState.usb : AudioSourceState.phoneMic;
+    _cleanup = widget.controller.config.audioCleanup;
   }
 
   void _onScorebandWeightChanged() {
@@ -102,6 +105,9 @@ class _CameraScreenState extends State<CameraScreen> {
           } else if (code == 'USB_AUDIO_STALLED') {
             _audio = AudioSourceState.usbRestarted;
             _showSnack('Audio: USB audio stalled — restarting it');
+          } else if (code.startsWith('AUDIO_CLEANUP_')) {
+            _cleanup = AudioCleanup.basic;
+            _showSnack('Cleanup: $code — ${s.errorMessage}');
           } else if (code.startsWith('USB_AUDIO_')) {
             _showSnack('Audio: $code — ${s.errorMessage}');
           } else if (!code.startsWith('OVERLAY_')) {
@@ -178,6 +184,17 @@ class _CameraScreenState extends State<CameraScreen> {
       });
       _pushScoreband();
     });
+  }
+
+  Future<void> _setCleanup(AudioCleanup mode) async {
+    try {
+      await widget.controller.setAudioCleanup(mode);
+      if (mounted) setState(() => _cleanup = mode);
+    } on RtmpBroadcasterException catch (e) {
+      _showSnack('Cleanup: ${e.code} — ${e.message}');
+    } catch (e) {
+      _showSnack('Cleanup failed: $e');
+    }
   }
 
   /// Stays until dismissed: the stream's audio source changed under the user.
@@ -267,7 +284,13 @@ class _CameraScreenState extends State<CameraScreen> {
               top: MediaQuery.of(context).padding.top + 20,
               left: 0,
               right: 0,
-              child: Center(child: AudioSourceChip(state: _audio)),
+              child: Center(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  AudioSourceChip(state: _audio),
+                  const SizedBox(width: 8),
+                  AudioCleanupButton(mode: _cleanup, onChanged: _setCleanup),
+                ]),
+              ),
             ),
 
             // Native diagnostics log, readable mid-stream

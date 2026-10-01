@@ -32,6 +32,7 @@ Status legend: ✅ implemented · ⛔ returns `notImplemented` · ❌ not implem
 | `setZoom` | `level: double` | `Map` applied zoom state | ✅ | ❌ |
 | `rebindPreview` | — | `null` | ✅ | ❌ |
 | `setAudioMute` | `muted: bool` | `null` | ✅ | ❌ |
+| `setAudioCleanup` | `mode: 'off' \| 'basic' \| 'voice'` | `null`; `INVALID_ARGS`, `NOT_CONFIGURED`. Live-safe ([audio-cleanup.md](audio-cleanup.md)) | ✅ | ❌ |
 | `setAppOrientation` | `orientation: 'portrait' \| 'landscape'` | `null` | ✅ | ❌ |
 | `listUsbVideoDevices` | — | `List<Map>` (UVC) | ✅ | ❌ |
 | `listUsbAudioDevices` | — | `List<Map>` (UAC) | ✅ | ❌ |
@@ -61,6 +62,7 @@ Dynamic overlay payloads, placement lengths (`{unit: 'percent'\|'px', value}`) a
 | `videoInput` | `'device' \| 'usb'` | device |
 | `audioInput` | `'mic' \| 'usb'` | mic |
 | `usbVideoDeviceId`, `usbAudioDeviceId` | int? | omitted when null |
+| `audioCleanup` | `'off' \| 'basic' \| 'voice'` | omitted when `off`; unknown → `INVALID_ARGS` |
 
 ### Sponsor map (`SponsorOverlay.toMap()` → Kotlin `SponsorConfig.fromMap`)
 
@@ -169,4 +171,7 @@ by the controller; **EventChannel** `error` event on `statusStream`. Some codes 
 | `USB_AUDIO_DEVICE_NOT_FOUND` | `audioInput: usb` but no USB audio input attached; recording from the default mic; extra key `requestedDeviceId` |
 | `USB_AUDIO_NOT_ROUTED` | Android routed the USB audio recording to another input (e.g. built-in mic); re-route requested; extra keys `routedDevice`, `routedType`, `requestedDeviceId` |
 | `USB_AUDIO_STALLED` | USB audio stopped delivering PCM while streaming (no data ≥ 1.5 s, or < 50 % of real-time over 3 s); USB capture restarted; extra key `reason` |
+| `AUDIO_CLEANUP_UNAVAILABLE` | `voice` requested but RNNoise can't run (library failed to load, or not 48 kHz); `basic` used instead |
+| `AUDIO_CLEANUP_FAILED` | unexpected error inside mic cleanup; cleanup turned off, raw audio continues (a new `setAudioCleanup` retries) |
+| `AUDIO_CLEANUP_OVERLOAD` | `voice` used > 50 % of real time over 5 s; switched to `basic` |
 | `USB_AUDIO_FALLBACK_PHONE_MIC` | USB audio stalled again within 30 s of a restart (or the restart failed); the stream now carries the built-in phone mic until the next `initPreview`/`configure`; extra key `reason` |

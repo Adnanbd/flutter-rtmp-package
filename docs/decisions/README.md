@@ -28,3 +28,4 @@ Template: copy [0000-template.md](0000-template.md), take the next number.
 | [0022](0022-usb-audio-late-resolve.md) | Android: USB audio resolves late, verifies its route, warns on fallback | Accepted |
 | [0023](0023-usb-audio-stall-fallback.md) | Android: USB audio stall watchdog, one restart, then phone-mic fallback | Accepted |
 | [0024](0024-audio-frames-use-encoder-clock.md) | Android: custom audio/video sources stamp frames with RootEncoder's clock | Accepted |
+| [0025](0025-audio-cleanup.md) | Android: mic cleanup chain with RNNoise, 48 kHz audio | Accepted |

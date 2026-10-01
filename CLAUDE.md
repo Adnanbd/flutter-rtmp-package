@@ -47,6 +47,7 @@ Path-specific rules load automatically from `.claude/rules/` when you touch `lib
 | Sponsor/scoreband math and GL gotchas | `docs/specs/overlay-compositing.md` |
 | Dynamic overlays + carousel | `docs/specs/dynamic-overlays.md` |
 | Camera zoom | `docs/specs/camera-zoom.md` |
+| Mic noise cleanup (RNNoise chain) | `docs/specs/audio-cleanup.md` |
 | Portrait/landscape GL values | `docs/specs/orientation.md` |
 | Reconnect, adaptive bitrate | `docs/specs/reconnect-and-bitrate.md` |
 | USB camera/mic | `docs/specs/usb-sources.md` |

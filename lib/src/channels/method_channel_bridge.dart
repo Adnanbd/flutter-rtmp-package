@@ -49,6 +49,9 @@ class MethodChannelBridge {
   Future<void> setAudioMute(bool muted) =>
       _channel.invokeMethod('setAudioMute', {'muted': muted});
 
+  Future<void> setAudioCleanup(String mode) =>
+      _channel.invokeMethod('setAudioCleanup', {'mode': mode});
+
   Future<void> setAppOrientation(String orientation) =>
       _channel.invokeMethod('setAppOrientation', {'orientation': orientation});
 
